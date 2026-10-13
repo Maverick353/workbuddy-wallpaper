@@ -26,6 +26,8 @@
  *
  * 韧性：tick 整体 try/catch + uncaughtException 只记录不退出（与 start-ui 同模式）；
  *   起服务失败退避 30s，杜绝重启风暴；WorkBuddy 状态连续 2 次读数一致才动作（防抖 ~10s）。
+ *   自检三件套（2026-10-13 收尾补齐）：① 日志按 1MB 轮转（companion.log.1），不会无限增长；
+ *   ② pid 活着但端口连续 4 tick 不通 ⇒ 判「假死」强杀重起；③ 每 60 tick（≈5min）打心跳。
  * 单实例：<数据目录>/.companion.lock 写自己 PID；已存活 → 打印并 exit 0。
  * 平台：仅 Windows（依赖 tasklist / taskkill / netstat）。
  */
@@ -47,10 +49,28 @@ const TICK_MS = 5000;                // 看门周期
 const CONFIRM_TICKS = 2;             // 防抖：连续两次读数一致才动作（≈10s）
 const START_CONFIRM_MS = 3000;       // 起服务后等 .ui.pid 出现的确认时长
 const START_BACKOFF_MS = 30000;      // 起失败退避时长（防快速重启风暴）
+const PORT_DOWN_LIMIT = 4;           // pid 活着但端口不通连续 N tick → 判假死重起（≈20s）
+const HEARTBEAT_TICKS = 60;          // 每 N tick 打一次心跳（≈5min，证明看门还活着）
+const LOG_MAX_BYTES = 1024 * 1024;   // 日志轮转阈值（1MB）
+const LOG_KEEP = 1;                  // 保留的滚动份数（companion.log.1）
+const CDP_PORT = 9222;               // 宿主调试端口（--status 诊断用）
 
-/** 日志：ISO 时间戳 append 到 companion.log，同时打 console。 */
+/** 日志轮转：超过 LOG_MAX_BYTES 就把当前日志滚成 .1（保留 LOG_KEEP 份），防无限增长。 */
+function rotateIfNeeded() {
+  try {
+    if (fs.statSync(LOG_FILE).size < LOG_MAX_BYTES) return;
+    for (let i = LOG_KEEP; i > 1; i--) {
+      const from = LOG_FILE + '.' + (i - 1), to = LOG_FILE + '.' + i;
+      if (fs.existsSync(from)) { try { fs.renameSync(from, to); } catch (_) {} }
+    }
+    fs.renameSync(LOG_FILE, LOG_FILE + '.1');
+  } catch (_) {}
+}
+
+/** 日志：ISO 时间戳 append 到 companion.log（带轮转），同时打 console。 */
 function log(...a) {
   const line = new Date().toISOString() + ' [companion] ' + a.join(' ') + '\n';
+  rotateIfNeeded();
   try { fs.appendFileSync(LOG_FILE, line); } catch (_) {}
   process.stdout.write(line);
 }
@@ -96,13 +116,22 @@ function readPidFile() {
 
 function removePidFile() { try { fs.unlinkSync(PID_FILE); } catch (_) {} }
 
-/** 127.0.0.1:<port> 是否 LISTENING（netstat 解析）。 */
-function portListening(port) {
+/** netstat -ano 输出（一次调用供多处端口判定复用）。 */
+function netstatOut() {
   const r = spawnSync('netstat', ['-ano'], { windowsHide: true, encoding: 'buffer' });
-  if (r.status !== 0) return { listening: false, pid: 0 };
-  const out = (r.stdout || Buffer.alloc(0)).toString();
+  return r.status === 0 ? (r.stdout || Buffer.alloc(0)).toString() : '';
+}
+
+/** 从 netstat 输出里取 127.0.0.1:<port> 的 LISTENING pid（无则 0）。 */
+function listenPid(out, port) {
   const m = new RegExp('127\\.0\\.0\\.1:' + port + '\\s+\\S+\\s+LISTENING\\s+(\\d+)').exec(out);
-  return m ? { listening: true, pid: Number(m[1]) } : { listening: false, pid: 0 };
+  return m ? Number(m[1]) : 0;
+}
+
+/** 127.0.0.1:<port> 是否 LISTENING。 */
+function portListening(port) {
+  const pid = listenPid(netstatOut(), port);
+  return { listening: pid > 0, pid };
 }
 
 /** 停服务：taskkill /F /T（杀进程树）；pid 文件失效则清理。reason 仅用于日志措辞。 */
@@ -137,10 +166,13 @@ function statusCmd() {
   const wb = workbuddyPids();
   const pid = readPidFile();
   const alive = !!(pid && pidAlive(pid));
-  const port = portListening(DEFAULT_PORT);
+  const ns = netstatOut();
+  const svcPid = listenPid(ns, DEFAULT_PORT);
+  const cdpPid = listenPid(ns, CDP_PORT);
   process.stdout.write('[companion] WorkBuddy: ' + (wb.length ? '运行中 (pid ' + wb.join(', ') + ')' : '未运行') + '\n');
   process.stdout.write('[companion] 壁纸服务: ' + (alive ? 'pid ' + pid + ' 存活' : '未运行（.ui.pid ' + (pid ? '指向的进程已死' : '缺失') + '）') + '\n');
-  process.stdout.write('[companion] ' + DEFAULT_PORT + ': ' + (port.listening ? 'LISTENING (pid ' + port.pid + ')' : '未监听') + '\n');
+  process.stdout.write('[companion] ' + DEFAULT_PORT + ': ' + (svcPid ? 'LISTENING (pid ' + svcPid + ')' : '未监听') + '\n');
+  process.stdout.write('[companion] CDP ' + CDP_PORT + ': ' + (cdpPid ? 'LISTENING（可注入 UI）' : '未监听 —— UI 注入不可用，请在 WorkDaddy 状态页点「一键恢复」') + '\n');
   process.exit(0);
 }
 
@@ -216,10 +248,24 @@ function acquireLock() {
 let wbState = null;      // 已确认的 WorkBuddy 状态（null=未确认过）
 let wbPending = null;    // 上次 tick 读数（待确认 → 防抖）
 let backoffUntil = 0;    // 起服务失败退避截止（ms 时间戳）
+let tickCount = 0;       // tick 计数（心跳节拍）
+let portDownStreak = 0;  // pid 活着但端口不通的连续 tick 数（假死判定）
 
 function ensureService() {
   const pid = readPidFile();
-  if (pid && pidAlive(pid)) { backoffUntil = 0; return; }      // 在跑（重置退避）
+  if (pid && pidAlive(pid)) {
+    // 自检：进程活着 ≠ 服务可用。端口连续 PORT_DOWN_LIMIT 个 tick 不通 ⇒ 判假死，强杀重起。
+    if (portListening(DEFAULT_PORT).listening) { portDownStreak = 0; backoffUntil = 0; return; }
+    portDownStreak++;
+    log('服务 pid=' + pid + ' 存活但 ' + DEFAULT_PORT + ' 未监听（' + portDownStreak + '/' + PORT_DOWN_LIMIT + '）');
+    if (portDownStreak < PORT_DOWN_LIMIT) return;
+    log('判定服务假死 → 强制重启');
+    try { spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)], { windowsHide: true, encoding: 'buffer' }); } catch (_) {}
+    removePidFile();
+    portDownStreak = 0;
+  } else {
+    portDownStreak = 0;
+  }
   if (Date.now() < backoffUntil) return;                       // 退避中，不重启风暴
   // 用户主动关闭过（面板「关闭壁纸」→ 服务写 .stopped）：不自动拉起，
   // 直到用户删 .stopped 或手动跑 start-ui（start-ui 启动时会清掉它）。
@@ -250,6 +296,14 @@ function tick() {
     }
     if (wbState) ensureService();
     else stopService('WorkBuddy 已关闭');
+
+    // 心跳：周期性证明「看门还活着」，也是排查时判断看门是否早死的唯一可靠依据。
+    tickCount++;
+    if (tickCount % HEARTBEAT_TICKS === 0) {
+      const pid = readPidFile();
+      log('心跳：看门存活（tick=' + tickCount + '）｜WorkBuddy ' + (wbState ? '在运行' : '未运行') +
+        '｜服务 ' + (pid && pidAlive(pid) ? 'pid ' + pid : '未运行'));
+    }
   } catch (e) {
     log('tick 异常（已忽略，看门继续）：' + ((e && e.message) || e));
   }
