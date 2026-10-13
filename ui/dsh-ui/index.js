@@ -101,6 +101,11 @@ const CHROME_CSS = [
   '.sidebar-next:not(#wdw-noop),.detail-panel:not(#wdw-noop),.detail-layout:not(#wdw-noop),.detail-main__body:not(#wdw-noop),[class*="_thumbnailContainer_"]:not(#wdw-noop){background-color:transparent !important;background-image:none !important;}',
   // ④ 会话历史导航条（右上角那条细竖条）顶边 1px rgb(61,61,61) → 一并去掉
   '.conversation-history-navigation__surface:not(#wdw-noop){border-color:transparent !important;}',
+  // ⑤ 全屏不留黑线（2026-10-14 用户要求：「屏幕里不要出现任何黑线，有线就用白色透明线代替」）。
+  //    通解：把**所有**边框颜色统一改成白色半透明细线 —— 覆盖代码块 / diff / 折叠块等
+  //    rgb(42,44,49) 深色描边。排除自家面板（它有自己的玻璃边框语言与蓝色强调边框，
+  //    被刷成白色会丢掉「当前项」高亮）。`:not(#id *)` 是 Selectors 4 的复合选择器写法，Chromium 支持。
+  'html body *:not(#wdw-noop):not(#wdw-wallpaper-panel):not(#wdw-wallpaper-panel *){border-color:rgba(255,255,255,.16) !important;}',
   // 承载 tooltip/dropdown 的**按钮/触发器容器**被 daemon 的 theme-patches 误涂：
   //   `html[data-theme=dark] body[data-vscode-theme-name] [class*="tooltip"]:not(…):not(…)…{background:var(--wb-bg-popover) !important}`
   //   （以及同族的 [class*="dropdown"]/[class*="popover"]/[class*="popper"]…）——作者已为若干
