@@ -21,12 +21,12 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const SRC = path.resolve(__dirname, '..');
-const SKILL_NAME = 'workbuddy-wallpaper';
+const SKILL_NAME = 'wallpaper-skill';
 const SKILLS_DIR = path.join(os.homedir(), '.workbuddy', 'skills');
 const DEST = path.join(SKILLS_DIR, SKILL_NAME);
 const COMPANION = path.join(DEST, 'scripts', 'companion.js');
 
-const EXCLUDE_TOP = new Set(['.git', 'node_modules', '_tmp']);
+const EXCLUDE_TOP = new Set(['.git', 'node_modules', '_tmp', 'dist']);
 
 function log(...a) { process.stdout.write('[install] ' + a.join(' ') + '\n'); }
 
@@ -38,7 +38,9 @@ function keep(src) {
     if (EXCLUDE_TOP.has(part)) return false;
     if (part.startsWith('.backup-')) return false;
   }
-  if (path.basename(src).endsWith('.log')) return false;
+  const base = path.basename(src);
+  if (base === '.gitignore' || base === '.gitattributes') return false;  // 仓库专用，不随包分发
+  if (base.endsWith('.log')) return false;
   return true;
 }
 

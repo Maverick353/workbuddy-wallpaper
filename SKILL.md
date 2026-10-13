@@ -1,12 +1,14 @@
 ---
-name: workbuddy-wallpaper
-description: 壁纸引擎与注入式 UI 技能 —— 零依赖本地服务（纯 Node 标准库，监听 127.0.0.1:47851）+ CDP 注入的玻璃拟态界面，把壁纸画进 WorkBuddy 窗口并叠加「拉绳吉祥物 + 4 页签面板（壁纸库/系统/扩展/关于）」。能力：官方/自定义（图片·视频上传）/Wallpaper Engine（Steam 创意工坊）壁纸、场景壁纸实时渲染（vendored WebWallGL）、收藏与标签过滤、随 WorkBuddy 启停的看门狗与开机自启。触发词：壁纸、换壁纸、壁纸面板、启动壁纸、壁纸服务、场景壁纸、动态壁纸、Wallpaper Engine、工坊壁纸、拉绳吉祥物、玻璃拟态面板、apply wallpaper、wallpaper engine。
+name: wallpaper-skill
+description: 壁纸引擎与注入式 UI 技能（壁纸 Skill）—— 零依赖本地服务（纯 Node 标准库，监听 127.0.0.1:47851）+ CDP 注入的玻璃拟态界面，把壁纸画进 WorkBuddy 窗口并叠加「拉绳吉祥物 + 5 页签面板（壁纸库/字体/系统/扩展/关于）」。能力：自定义（图片·视频上传）/Wallpaper Engine（Steam 创意工坊）壁纸、场景壁纸实时渲染（vendored WebWallGL）、收藏与标签过滤、整站文字颜色（纯白/纯黑）与字体族切换、随 WorkBuddy 启停的看门狗与开机自启。触发词：壁纸、换壁纸、壁纸面板、启动壁纸、壁纸服务、场景壁纸、动态壁纸、Wallpaper Engine、工坊壁纸、拉绳吉祥物、玻璃拟态面板、改字体、文字变黑、壁纸 Skill、apply wallpaper、wallpaper engine。
+description_zh: 壁纸引擎与注入式 UI（玻璃拟态面板 + 拉绳吉祥物；自定义/工坊壁纸、场景实时渲染、文字颜色与字体切换）
+description_en: Wallpaper engine with an injected glassmorphism UI for WorkBuddy — custom and Steam Workshop wallpapers, live scene rendering, and app-wide text color/font control.
 license: AGPL-3.0-or-later
 version: 1.0.0
 agent_created: true
 ---
 
-# workbuddy-wallpaper · 壁纸引擎与注入式 UI
+# 壁纸 Skill · 壁纸引擎与注入式 UI（wallpaper-skill）
 
 把壁纸能力做成本机**独立服务 + 注入式界面**：纯 Node 标准库实现（**零 npm 依赖**），
 监听回环端口暴露完整 HTTP API，并通过 CDP 把玻璃拟态 UI（拉绳吉祥物 + 面板）注入 WorkBuddy 窗口。

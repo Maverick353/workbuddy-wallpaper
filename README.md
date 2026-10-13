@@ -1,6 +1,7 @@
-# workbuddy-wallpaper
+# 壁纸 Skill（wallpaper-skill）
 
 **独立壁纸引擎 skill** —— 零依赖本地服务 + 注入式玻璃拟态 UI，把壁纸画进 WorkBuddy 窗口。
+（仓库目录名 `workbuddy-wallpaper`；技能标识 `wallpaper-skill`。）
 
 > 与 WorkDaddy 主仓库**解耦**：本项目是独立 skill，不进 WorkDaddy 源码树。许可 AGPL-3.0-or-later。
 
