@@ -20,6 +20,7 @@ const media = core.media;
 const store = core.store;
 const we = core.we;
 const { readMask } = require('../core/theme-css.js'); // 蒙版与 theme-css 单一源
+const fonts = require('../core/fonts.js');            // 本机字体枚举（字体页的可搜索列表）
 
 /** 本插件负责的 API 路径（daemon 的 handleApi 据此转发）。 */
 const ROUTES = [
@@ -33,6 +34,7 @@ const ROUTES = [
   ['POST', '/api/theme-bg'],
   ['GET', '/api/mask'],
   ['POST', '/api/mask'],
+  ['GET', '/api/fonts'],
 ];
 
 /** 本插件负责的静态路径前缀（daemon 的 startServer 据此转发）。 */
@@ -50,7 +52,7 @@ function ctxWithDirs(ctx) {
 /** 是否本插件负责的 API 路径。 */
 function isApiPath(p) {
   if (p === '/api/wallpaper/health') return true;
-  if (p === '/api/wallpapers' || p === '/api/custom-wallpapers' || p === '/api/we-wallpapers' || p === '/api/we-apply' || p === '/api/theme-bg' || p === '/api/mask') return true;
+  if (p === '/api/wallpapers' || p === '/api/custom-wallpapers' || p === '/api/we-wallpapers' || p === '/api/we-apply' || p === '/api/theme-bg' || p === '/api/mask' || p === '/api/fonts') return true;
   return false;
 }
 
@@ -128,6 +130,11 @@ function createRoutes(ctx) {
     }
     if (m === 'POST' && p === '/api/theme-bg') {
       return ctx.readBody(req).then((body) => store.writeThemeBg(c, body || {})).then((r) => send(res, r));
+    }
+    // 本机字体列表（字体页的「搜得到」来源）。带磁盘缓存，?refresh=1 强制重扫。
+    if (m === 'GET' && p === '/api/fonts') {
+      const refresh = /[?&]refresh=1/.test(String(req.url || ''));
+      return send(res, { status: 200, body: Object.assign({ ok: true }, fonts.listFonts(c.dataDir, { refresh, log: ctx.log })) });
     }
     // 背景蒙版（独立应用的操作栏需要；WorkDaddy daemon 自带同名接口，插件侧声明不改变其行为）
     if (m === 'GET' && p === '/api/mask') {

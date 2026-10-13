@@ -49,13 +49,9 @@ const TABS = [
   { id: 'about', label: '关于' },
 ];
 
-/** 字体页可选项（本机已装字体，零联网）。default = 不覆盖。 */
+/** 字体页常量。颜色 '' = 不覆盖（跟随主题）；其余是 #rrggbb。字体列表由服务端 /api/fonts 提供。 */
 const LS_FONT = 'wdw.font';
-const FONT_COLORS = [['default', '默认'], ['white', '纯白'], ['black', '纯黑']];
-const FONT_FAMILIES = [
-  ['default', '默认'], ['yahei', '微软雅黑'], ['simhei', '黑体'], ['simsun', '宋体'],
-  ['kaiti', '楷体'], ['dengxian', '等线'], ['mono', '等宽'],
-];
+const FONT_COLORS = [['#ffffff', '纯白'], ['#000000', '纯黑'], ['', '默认']];
 
 function wallpaperPanel(payload) {
   var ID = payload.ids;
@@ -64,7 +60,7 @@ function wallpaperPanel(payload) {
   var LS_TAB = payload.lsTab, LS_PREFS = payload.lsPrefs, LS_REPO = payload.lsRepo;
   var FILTERS = payload.filters;
   // 字体页常量（必须走 payload —— 本函数会被 toString() 注入，模块级常量取不到）
-  var LS_FONT = payload.lsFont, FONT_COLORS = payload.fontColors, FONT_FAMILIES = payload.fontFamilies;
+  var LS_FONT = payload.lsFont, FONT_COLORS = payload.fontColors;
   // 宿主环境：闭包里存在 api(path, opts)（自带 X-WorkDaddy-Token）。独立环境取不到 → 走 fetch。
   // typeof 对未声明变量安全；payload.hostApi 为假时短路，连 typeof 都不求值。
   var HOST_API = payload.hostApi && typeof api === 'function' ? api : null;
@@ -79,6 +75,7 @@ function wallpaperPanel(payload) {
     offline: false,               // 服务不可达（fetch 失败）：显示明确错误态，而非静默空白
     rfilter: (function () { try { var r = JSON.parse(localStorage.getItem(LS_REPO) || '{}'); return r.filter || 'all'; } catch (_) { return 'all'; } })(),
     rquery: '',                  // 壁纸仓库：标签过滤 + 关键词
+    fonts: null, fontsLoading: false, fontQuery: '',   // 字体页：本机字体列表 + 搜索词
   };
 
   function prefs(patch) {
@@ -216,6 +213,15 @@ function wallpaperPanel(payload) {
       // 空态 / 提示
       '#' + ID.root + ' .p-empty{padding:14px;border-radius:12px;border:1px dashed rgba(255,255,255,.20);background:var(--wdw-glass-fill);color:var(--wdw-ink-3);font-size:12px;text-align:center}',
       '#' + ID.root + ' .p-hint{font-size:11px;color:var(--wdw-ink-3)}',
+      // ── 字体页：调色盘 + 可搜索字体列表 ──
+      '#' + ID.root + ' .p-colorwrap{display:flex;align-items:center;gap:8px}',
+      '#' + ID.root + ' input[type=color]{width:40px;height:24px;padding:0;border:1px solid var(--wdw-glass-line);border-radius:8px;background:transparent;cursor:pointer}',
+      '#' + ID.root + ' input[type=color]::-webkit-color-swatch-wrapper{padding:2px}',
+      '#' + ID.root + ' input[type=color]::-webkit-color-swatch{border:0;border-radius:5px}',
+      '#' + ID.root + ' .p-fontlist{display:flex;flex-wrap:wrap;gap:6px;max-height:220px;overflow-y:auto;padding:6px;margin:4px 0 8px;border-radius:12px;background:var(--wdw-glass-fill,rgba(255,255,255,.05));border:1px solid var(--wdw-glass-line,rgba(255,255,255,.12))}',
+      '#' + ID.root + ' .p-font{max-width:100%;height:26px;padding:0 9px;border-radius:8px;border:1px solid var(--wdw-glass-line,rgba(255,255,255,.12));background:rgba(255,255,255,.05);color:inherit;cursor:pointer;font-size:12px;line-height:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:background var(--wdw-dur-fast)}',
+      '#' + ID.root + ' .p-font:hover{background:rgba(255,255,255,.14)}',
+      '#' + ID.root + ' .p-font.p-font--cur{border-color:var(--wdw-accent,#4f8cff);box-shadow:inset 0 0 0 1px var(--wdw-accent,#4f8cff)}',
       '#' + ID.root + ' .p-err{font-size:11px;color:#ff8080}',
       // 服务不可达提示条（红调：明显但不刺眼；带重试按钮）
       '#' + ID.root + ' .p-offline{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,128,128,.42);background:rgba(255,128,128,.10);color:#ffb3b3;font-size:11px;line-height:1.5}',
@@ -337,35 +343,78 @@ function wallpaperPanel(payload) {
       + '</div>';
   }
 
-  // ── 字体页：文字颜色（默认/纯白/纯黑）+ 字体族（即时生效，只存本机 UI）──
+  // ── 字体页：调色盘（任意颜色）+ 可搜索的本机字体列表（即时生效，只存本机 UI）──
   function fontState() {
     try { return JSON.parse(localStorage.getItem(LS_FONT) || '{}') || {}; } catch (_) { return {}; }
   }
-  function setFont(key, val) {
+  function setFont(patch) {
     // 优先走注入层的统一入口（它负责即时重绘 <style>）；缺失则退化为直接写 localStorage。
-    if (window.__wdwFont && typeof window.__wdwFont.set === 'function') { window.__wdwFont.set(key, val); return; }
-    var p = fontState(); p[key] = val;
+    if (window.__wdwFont && typeof window.__wdwFont.set === 'function') {
+      Object.keys(patch).forEach(function (k) { window.__wdwFont.set(k, patch[k]); });
+      return;
+    }
+    var p = fontState(); Object.assign(p, patch);
     try { localStorage.setItem(LS_FONT, JSON.stringify(p)); } catch (_) {}
+  }
+  /** 字体名 → CSS 栈（去引号防注入，尾部挂通用兜底）。 */
+  function fontStack(name) {
+    var n = String(name || '').replace(/["\\;]/g, '').trim();
+    return n ? ('"' + n + '",system-ui,sans-serif') : '';
+  }
+  /** 拉本机字体列表（只拉一次；失败标 offline）。 */
+  function loadFonts() {
+    if ((st.fonts && st.fonts.length) || st.fontsLoading) return Promise.resolve();
+    st.fontsLoading = true;
+    return req('/api/fonts').then(function (d) {
+      st.fontsLoading = false;
+      if (d && d.ok && Array.isArray(d.fonts)) { st.fonts = d.fonts; st.offline = false; }
+      else if (d === null) { st.offline = true; }
+    }).catch(function () { st.fontsLoading = false; });
+  }
+  /** 字体列表（按关键词过滤；每项用自身字体渲染做预览）。 */
+  function fontListHtml(query) {
+    var list = st.fonts || [];
+    if (!list.length) return '<div class="p-empty">' + (st.offline ? '服务未连接，读不到字体列表' : '正在读取本机字体…') + '</div>';
+    var cur = String(fontState().familyName || '');
+    var q = String(query || '').trim().toLowerCase();
+    var hit = q ? list.filter(function (n) { return n.toLowerCase().indexOf(q) >= 0; }) : list;
+    if (!hit.length) return '<div class="p-empty">没有匹配的字体</div>';
+    var shown = hit.slice(0, 150);
+    return shown.map(function (n) {
+      return '<button type="button" class="p-font' + (cur === n ? ' p-font--cur' : '') + '" data-font="' + esc(n) + '"'
+        + ' style="font-family:' + esc(fontStack(n)) + '" title="' + esc(n) + '">' + esc(n) + '</button>';
+    }).join('') + (hit.length > shown.length ? '<div class="p-hint">共 ' + hit.length + ' 个匹配，继续输入缩小范围</div>' : '');
   }
   function paneFont() {
     var fs = fontState();
-    var color = fs.color || 'default';
-    var fam = fs.family || 'default';
+    var color = String(fs.color || '');
+    var famName = String(fs.familyName || '');
+    var isHex = /^#[0-9a-fA-F]{6}$/.test(color);
+    var total = (st.fonts && st.fonts.length) ? st.fonts.length : '…';
     return '<div class="p-pane">'
       + '<div class="p-sec"><span class="p-sec-t">文字颜色</span>'
-      + row('显示文字', '把界面文字改成纯白或纯黑（默认跟随主题）',
-        '<div class="p-seg" style="width:186px">' + FONT_COLORS.map(function (c) {
-          return '<button data-fontcolor="' + c[0] + '" class="' + (color === c[0] ? 'wdw-on' : '') + '">' + c[1] + '</button>';
+      + row('调色盘', '任选颜色，即时生效',
+        '<div class="p-colorwrap"><input type="color" id="wdw-fontcolor" value="' + (isHex ? color : '#ffffff') + '">'
+        + '<span class="p-hint" id="wdw-fontcolor-v">' + esc(isHex ? color.toUpperCase() : '跟随主题') + '</span></div>')
+      + row('快捷', '纯白 / 纯黑 / 恢复默认',
+        '<div class="p-seg" style="width:196px">' + FONT_COLORS.map(function (c) {
+          var on = (c[0] === '') ? !isHex : (isHex && c[0].toLowerCase() === color.toLowerCase());
+          return '<button data-fontcolor="' + c[0] + '" class="' + (on ? 'wdw-on' : '') + '">' + c[1] + '</button>';
         }).join('') + '</div>')
       + '</div>'
       + '<div class="p-sec"><span class="p-sec-t">字体</span>'
-      + row('字体类型', '整站字体族（本机已装，无需联网）',
-        '<select id="wdw-fontfamily" style="width:132px">' + FONT_FAMILIES.map(function (f) {
-          return '<option value="' + f[0] + '"' + (fam === f[0] ? ' selected' : '') + '>' + f[1] + '</option>';
-        }).join('') + '</select>')
+      + row('搜索字体', '本机已装 ' + total + ' 款，输入关键词过滤',
+        '<input id="wdw-fontsearch" class="p-search" style="flex:0 0 132px" placeholder="雅黑 / Kai / Mono" value="' + esc(st.fontQuery || '') + '">')
+      + '<div class="p-fontlist" id="wdw-fontlist">' + fontListHtml(st.fontQuery) + '</div>'
+      + row('当前字体', esc(famName || '跟随主题'), '<button class="p-btn" type="button" data-act="font-reset">恢复默认</button>')
       + '</div>'
       + '<div class="p-hint">颜色与字体即时生效，只存本机 UI（localStorage ' + LS_FONT + '）。</div>'
       + '</div>';
+  }
+  /** 只重绘字体列表（不整页重绘 ⇒ 搜索框焦点/光标不丢）。 */
+  function refreshFontList() {
+    var box = document.getElementById('wdw-fontlist');
+    if (box) box.innerHTML = fontListHtml(st.fontQuery);
   }
 
   function paneSystem() {
@@ -541,7 +590,7 @@ function wallpaperPanel(payload) {
         // 下面的 closest 全部落空 → 用户体感「点了没反应」（实测复现：target=ASIDE）。
         // 兜底：所有已知交互选择器都未命中时，用事件坐标 elementFromPoint 找回
         // 视觉目标（= 用户意图目标）。注意必须在主匹配之后判断，不干扰正常路径。
-        var KNOWN = '.p-tab,[data-src],[data-rf],[data-fav],[data-del],.p-card,[data-act],[data-fontcolor],.p-seg button,.p-chips button,.p-btn';
+        var KNOWN = '.p-tab,[data-src],[data-rf],[data-fav],[data-del],.p-card,[data-act],[data-fontcolor],[data-font],.p-seg button,.p-chips button,.p-btn';
         if (typeof e.clientX === 'number' && !(t.closest && t.closest(KNOWN))) {
           var visual = document.elementFromPoint(e.clientX, e.clientY);
           if (visual && visual.closest && visual.closest(KNOWN)) t = visual;
@@ -549,9 +598,16 @@ function wallpaperPanel(payload) {
         // 页签
         var tabBtn = t.closest ? t.closest('.p-tab') : null;
         if (tabBtn) { setTab(tabBtn.getAttribute('data-tab')); return; }
-        // 字体页：文字颜色（纯白/纯黑/默认）
+        // 字体页：文字颜色（调色盘快捷预设；空串 = 恢复默认）
         var fcBtn = t.closest ? t.closest('[data-fontcolor]') : null;
-        if (fcBtn) { setFont('color', fcBtn.getAttribute('data-fontcolor')); paint(); return; }
+        if (fcBtn) { setFont({ color: fcBtn.getAttribute('data-fontcolor') || '' }); paint(); return; }
+        // 字体页：选中某个字体（列表项）
+        var fontBtn = t.closest ? t.closest('[data-font]') : null;
+        if (fontBtn) {
+          var fname = fontBtn.getAttribute('data-font');
+          setFont({ family: fontStack(fname), familyName: fname });
+          paint(); return;
+        }
         // 来源分段
         var srcBtn = t.closest ? t.closest('[data-src]') : null;
         if (srcBtn) {
@@ -598,6 +654,7 @@ function wallpaperPanel(payload) {
             var f = el.querySelector('#wdw-up-file');
             if (f) f.click();
           } else if (a === 'scan-we') { loadWe(true); }
+          else if (a === 'font-reset') { setFont({ family: '', familyName: '' }); paint(); }
           else if (a === 'shutdown') {
             // 关闭壁纸：① 通知服务写 .stopped 标志并退出（companion 据此不再自动拉起）
             //           ② 本地立即拆除注入的 UI/背景层，给用户即时反馈
@@ -616,12 +673,20 @@ function wallpaperPanel(payload) {
     // 搜索框：input 事件只重绘网格（不整页重绘 ⇒ 输入焦点与光标不丢）
     el.addEventListener('input', guard(function (e) {
       var t = e.target;
-      if (t && t.id === 'wdw-repo-q') { st.rquery = t.value || ''; refreshRepoGrid(); }
+      if (!t) return;
+      if (t.id === 'wdw-repo-q') { st.rquery = t.value || ''; refreshRepoGrid(); }
+      else if (t.id === 'wdw-fontsearch') { st.fontQuery = t.value || ''; refreshFontList(); }
+      else if (t.id === 'wdw-fontcolor') {
+        // 调色盘拖动中：即时预览（不整页重绘，避免打断取色器）
+        setFont({ color: t.value });
+        var v = document.getElementById('wdw-fontcolor-v');
+        if (v) v.textContent = String(t.value).toUpperCase();
+      }
     }));
 
     el.addEventListener('change', guard(function (e) {
       var t = e.target;
-      if (t.id === 'wdw-fontfamily') { setFont('family', t.value); return; }
+      if (t.id === 'wdw-fontcolor') { setFont({ color: t.value }); paint(); return; }
       if (t.id === 'wdw-up-file' && t.files && t.files[0]) {
         var file = t.files[0];
         var rd = new FileReader();
@@ -643,6 +708,10 @@ function wallpaperPanel(payload) {
     st.tab = id;
     try { localStorage.setItem(LS_TAB, id); } catch (_) {}
     paint();
+    // 字体页首次进入时才去拉本机字体列表（不在启动时拖慢注入）
+    if (id === 'font' && !(st.fonts && st.fonts.length)) {
+      loadFonts().then(function () { if (st.tab === 'font') paint(); }).catch(function () {});
+    }
   }
   // 关闭壁纸：本地拆除注入的一切（UI 三件套 + 背景层 + 岛观察器 + 全局 API）。
   // 与服务端 /api/shutdown 配合：服务退出 + 页面清净，用户视角「壁纸关掉了」。
@@ -699,7 +768,7 @@ function wallpaperPanel(payload) {
 }
 
 function panelExpression(payload) {
-  var p = Object.assign({ ids: IDS, tabs: TABS, lsTab: LS_TAB, lsPrefs: LS_PREFS, lsRepo: LS_REPO, filters: REPO_FILTERS, lsFont: LS_FONT, fontColors: FONT_COLORS, fontFamilies: FONT_FAMILIES }, payload || {});
+  var p = Object.assign({ ids: IDS, tabs: TABS, lsTab: LS_TAB, lsPrefs: LS_PREFS, lsRepo: LS_REPO, filters: REPO_FILTERS, lsFont: LS_FONT, fontColors: FONT_COLORS }, payload || {});
   return '(' + wallpaperPanel.toString() + ')(' + JSON.stringify(p) + ')';
 }
 

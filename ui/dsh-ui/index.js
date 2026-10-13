@@ -187,7 +187,9 @@ function fontCode() {
     // 等），body * 只有 (0,0,1) 会被压 → 用 :not(#id) 把选择器抬到 (1,0,2)。
     // 另：不少文字的可见色来自 -webkit-text-fill-color（它会盖过 color），必须一起设。
     'var SEL="html,body,html body *:not(#wdw-noop)";',
-    'var c=(p.color==="white")?"#ffffff":((p.color==="black")?"#000000":"");',
+    // 颜色：支持任意 #rrggbb（面板调色盘），兼容历史值 white/black；空串 = 不覆盖
+    'var cc=String(p.color||"");var c="";',
+    'if(/^#[0-9a-fA-F]{6}$/.test(cc))c=cc;else if(cc==="white")c="#ffffff";else if(cc==="black")c="#000000";',
     'if(c){',
     'css+=SEL+"{color:"+c+" !important;-webkit-text-fill-color:"+c+" !important}";',
     'css+="html body *:not(#wdw-noop)::before,html body *:not(#wdw-noop)::after{color:"+c+" !important;-webkit-text-fill-color:"+c+" !important}";',
@@ -197,7 +199,8 @@ function fontCode() {
     'css+="html body svg text,html body svg tspan{fill:"+c+" !important}";',
     'css+="html body svg:not([fill=none]),html body svg *:not([fill=none]){fill:"+c+" !important}";',
     '}',
-    'var f=FAM[p.family]||"";',
+    // 字体：历史短码走 FAM；面板现在直接存整条 CSS 栈（含引号）→ 原样用
+    'var f=FAM[p.family]||((typeof p.family==="string"&&p.family.indexOf(String.fromCharCode(34))>=0)?p.family:"");',
     'if(f)css+=SEL+"{font-family:"+f+" !important}";',
     'var s=document.getElementById("wdw-font-style");',
     'if(!s){s=document.createElement("style");s.id="wdw-font-style";(document.head||document.documentElement).appendChild(s);}',
