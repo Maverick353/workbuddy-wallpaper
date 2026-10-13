@@ -90,6 +90,15 @@ const CHROME_CSS = [
   '.sidebar-next-main-header{background-color:transparent !important;background-image:none !important;border-color:transparent !important;}',
   // 「发现应用」按钮的黑框：仅去掉静态边框（保留 hover 反馈，hover 时宿主样式生效）
   '.conversation-sidebar .wb-button:not(:hover){border-color:transparent !important;}',
+  // ── 2026-10-14 全页审计（用户报「输入框右下 / 左上 那两块看不见壁纸」）──
+  // ① 输入框工具栏**右侧那一组**（模型选择 / mic / 发送）单独带不透明底 rgb(31,31,31)，
+  //    而同一行的左侧是透明的 → 视觉割裂。整条工具栏一律透明。
+  '.cr-input-toolbar:not(#wdw-noop),.cr-input-toolbar__left:not(#wdw-noop),.cr-input-toolbar__right:not(#wdw-noop){background-color:transparent !important;background-image:none !important;border-color:transparent !important;box-shadow:none !important;}',
+  // ② 「发现应用」按钮（.wb-button--secondary）底色 rgb(46,46,46)：改成浅玻璃 —— 既透出壁纸，
+  //    又保留「这是个按钮」的观感（hover 仍走宿主样式）。
+  '.conversation-sidebar .wb-button--secondary:not(#wdw-noop){background-color:rgba(255,255,255,.10) !important;border-color:rgba(255,255,255,.16) !important;backdrop-filter:blur(10px) saturate(1.2) !important;-webkit-backdrop-filter:blur(10px) saturate(1.2) !important;}',
+  // ③ 右侧「剪藏 / 预览」面板（5.8.2 的 .sidebar-next + .detail-*）：整块 rgb(23,25,29) 盖住约 31% 屏宽。
+  '.sidebar-next:not(#wdw-noop),.detail-panel:not(#wdw-noop),.detail-layout:not(#wdw-noop),.detail-main__body:not(#wdw-noop),[class*="_thumbnailContainer_"]:not(#wdw-noop){background-color:transparent !important;background-image:none !important;}',
   // 承载 tooltip/dropdown 的**按钮/触发器容器**被 daemon 的 theme-patches 误涂：
   //   `html[data-theme=dark] body[data-vscode-theme-name] [class*="tooltip"]:not(…):not(…)…{background:var(--wb-bg-popover) !important}`
   //   （以及同族的 [class*="dropdown"]/[class*="popover"]/[class*="popper"]…）——作者已为若干
