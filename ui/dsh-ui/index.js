@@ -99,6 +99,8 @@ const CHROME_CSS = [
   '.conversation-sidebar .wb-button--secondary:not(#wdw-noop){background-color:rgba(255,255,255,.10) !important;border-color:rgba(255,255,255,.16) !important;backdrop-filter:blur(10px) saturate(1.2) !important;-webkit-backdrop-filter:blur(10px) saturate(1.2) !important;}',
   // ③ 右侧「剪藏 / 预览」面板（5.8.2 的 .sidebar-next + .detail-*）：整块 rgb(23,25,29) 盖住约 31% 屏宽。
   '.sidebar-next:not(#wdw-noop),.detail-panel:not(#wdw-noop),.detail-layout:not(#wdw-noop),.detail-main__body:not(#wdw-noop),[class*="_thumbnailContainer_"]:not(#wdw-noop){background-color:transparent !important;background-image:none !important;}',
+  // ④ 会话历史导航条（右上角那条细竖条）顶边 1px rgb(61,61,61) → 一并去掉
+  '.conversation-history-navigation__surface:not(#wdw-noop){border-color:transparent !important;}',
   // 承载 tooltip/dropdown 的**按钮/触发器容器**被 daemon 的 theme-patches 误涂：
   //   `html[data-theme=dark] body[data-vscode-theme-name] [class*="tooltip"]:not(…):not(…)…{background:var(--wb-bg-popover) !important}`
   //   （以及同族的 [class*="dropdown"]/[class*="popover"]/[class*="popper"]…）——作者已为若干

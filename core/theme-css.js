@@ -124,7 +124,10 @@ function resolveBackgroundAssets(p) {
           P + '.conversation-section-label' + X + '{background:transparent !important}',
           P + '[class*="_headerTopPadding_"]' + X + '{background:transparent !important}',
           P + '.conversation-message-queue' + X + ',' + P + '.cb-message-queue' + X + '{background:transparent !important}',
-          P + '[class*="_capsule_"]' + X + '{background:transparent !important}',
+          // 「N 个后台任务运行中」胶囊（[class*="_capsule_"]）：原本 1px rgb(58,58,58) 深灰描边，
+          // 在透明主题下就是一圈「黑线」→ 换成与聊天输入框同款细边框（rgba(255,255,255,.16)）
+          // + 极淡玻璃底，观感与输入框一致（2026-10-14 用户要求）。
+          P + '[class*="_capsule_"]' + X + '{background-color:rgba(255,255,255,.06) !important;background-image:none !important;border-color:rgba(255,255,255,.16) !important}',
           P + '[class*="_previewHeader_"]' + X + '{background:transparent !important}',
           P + '.cr-input-container' + X + '{background:transparent !important}',
           // WorkDaddy 注入的输入框内联按钮（「暂存提示词」/「增强」）自带 90% 白底，在透明主题下
