@@ -183,10 +183,18 @@ function fontCode() {
     'function read(){try{return JSON.parse(localStorage.getItem(KEY)||"{}")||{};}catch(_){return {};}}',
     'function apply(){',
     'var p=read();var css="";',
+    // 特异性：宿主用「类选择器 + !important」给自己的文字上色（实测 .conversation-section-label-text
+    // 等），body * 只有 (0,0,1) 会被压 → 用 :not(#id) 把选择器抬到 (1,0,2)。
+    // 另：不少文字的可见色来自 -webkit-text-fill-color（它会盖过 color），必须一起设。
+    'var SEL="html,body,html body *:not(#wdw-noop)";',
     'var c=(p.color==="white")?"#ffffff":((p.color==="black")?"#000000":"");',
-    'if(c)css+="html,body,body *{color:"+c+" !important}";',
+    'if(c){',
+    'css+=SEL+"{color:"+c+" !important;-webkit-text-fill-color:"+c+" !important}";',
+    'css+="html body *:not(#wdw-noop)::before,html body *:not(#wdw-noop)::after{color:"+c+" !important;-webkit-text-fill-color:"+c+" !important}";',
+    'css+="html body svg text,html body svg tspan{fill:"+c+" !important}";',
+    '}',
     'var f=FAM[p.family]||"";',
-    'if(f)css+="html,body,body *{font-family:"+f+" !important}";',
+    'if(f)css+=SEL+"{font-family:"+f+" !important}";',
     'var s=document.getElementById("wdw-font-style");',
     'if(!s){s=document.createElement("style");s.id="wdw-font-style";(document.head||document.documentElement).appendChild(s);}',
     'if(s.textContent!==css)s.textContent=css;',
