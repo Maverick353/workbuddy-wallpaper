@@ -97,21 +97,38 @@ function resolveBackgroundAssets(p) {
           '#root{background:',
           'linear-gradient(rgba(0,0,0,' + mask + '),rgba(0,0,0,' + mask + '))',
         ].join('');
+        // ── 特异性提升（2026-10-14 实测确立）──────────────────────────────────
+        // 宿主给自己的容器/文字配了「类选择器 + !important」，我们 (0,2,1) 级的规则**压不住**。
+        // 通解：给每条选择器挂 `:not(#不存在id)`，把特异性抬到 (1,0,x)（三连类名亦可，但这里选择器
+        // 形态多样，统一用 :not 更省心）。⚠️ 验证时必须**跨任务读值**：同一任务内改完样式立刻
+        // getComputedStyle 会返回旧值，会让人误判"没生效"（本文件今天的排查就踩过这个坑）。
+        const X = ':not(#wdw-noop)';
+        const P = 'body[data-vscode-theme-name] ';
         const bgTail = [
-          'body[data-vscode-theme-name] .teams-container,body[data-vscode-theme-name] .teams-container.is-mac{background:transparent !important;' + containerBlurCss + '}',
-          'body[data-vscode-theme-name] [data-view-id]{background:transparent !important}',
-          'body[data-vscode-theme-name] .main-content{background:transparent !important}',
+          P + '.teams-container' + X + ',' + P + '.teams-container.is-mac' + X + '{background:transparent !important;' + containerBlurCss + '}',
+          P + '[data-view-id]' + X + '{background:transparent !important}',
+          P + '.main-content' + X + '{background:transparent !important}',
           // 左侧菜单（会话列表）透明，背景直接透出
-          'body[data-vscode-theme-name] .conversation-list,body[data-vscode-theme-name] [data-view-id=sidebar]{background:transparent !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important}',
+          P + '.conversation-list' + X + ',' + P + '[data-view-id=sidebar]' + X + '{background:transparent !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important}',
           // 2026-10-14 定位：WorkBuddy 5.8.2 新增了三个**不透明的布局容器**，把整张壁纸盖死
           //   （实测：.teams-grid-scroll-content = rgb(20,20,20) 覆盖 97% 视口、
           //    ._gridView_<hash> = rgb(31,31,31) 覆盖 97%、.conversation-shell = rgb(20,20,20) 覆盖 74%）。
           //   表现为「壁纸不显示 + 整页纯黑」。类名含 CSS-module 哈希，故 _gridView_ 用属性子串匹配。
-          'body[data-vscode-theme-name] .teams-grid-scroll-content{background:transparent !important}',
-          'body[data-vscode-theme-name] [class*="_gridView_"],body[data-vscode-theme-name] [class*="_gridViewItem_"]{background:transparent !important}',
-          'body[data-vscode-theme-name] .conversation-shell{background:transparent !important}',
+          P + '.teams-grid-scroll-content' + X + '{background:transparent !important}',
+          P + '[class*="_gridView_"]' + X + ',' + P + '[class*="_gridViewItem_"]' + X + '{background:transparent !important}',
+          P + '.conversation-shell' + X + '{background:transparent !important}',
+          // 2026-10-14 二轮：左侧任务栏里成片发黑的小块 —— 同样是 5.8.2 新增的不透明底 rgb(31,31,31)：
+          //   小节标签 .conversation-section-label（任务/分组）、小节头 [class*="_headerTopPadding_"]、
+          //   消息队列 .conversation-message-queue、短标签 [class*="_capsule_"]、
+          //   输入区外框 .cr-input-container（内层 [class*="chat-input"] 仍保留 40% 毛玻璃保证可读性）。
+          P + '.conversation-section-label' + X + '{background:transparent !important}',
+          P + '[class*="_headerTopPadding_"]' + X + '{background:transparent !important}',
+          P + '.conversation-message-queue' + X + ',' + P + '.cb-message-queue' + X + '{background:transparent !important}',
+          P + '[class*="_capsule_"]' + X + '{background:transparent !important}',
+          P + '[class*="_previewHeader_"]' + X + '{background:transparent !important}',
+          P + '.cr-input-container' + X + '{background:transparent !important}',
           // 输入框区域：毛玻璃背景（背景透出）
-          'body[data-vscode-theme-name] [class*="chat-input"]{background:color-mix(in srgb,var(--wb-bg-primary) 40%,transparent) !important;backdrop-filter:blur(20px) saturate(1.15);-webkit-backdrop-filter:blur(20px) saturate(1.15)}',
+          P + '[class*="chat-input"]' + X + '{background:color-mix(in srgb,var(--wb-bg-primary) 40%,transparent) !important;backdrop-filter:blur(20px) saturate(1.15);-webkit-backdrop-filter:blur(20px) saturate(1.15)}',
           // 2026-10-13 移除「主内容区底部渐变」（原 38%→100% 压 55% 深色）：底部发暗的主因之一，
           // 按用户反馈去掉。如需重新压暗底部以提升可读性，改用提高均匀蒙版（外观页滑条）即可。
         ].join('');
