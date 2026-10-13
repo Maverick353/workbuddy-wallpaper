@@ -127,6 +127,9 @@ function resolveBackgroundAssets(p) {
           P + '[class*="_capsule_"]' + X + '{background:transparent !important}',
           P + '[class*="_previewHeader_"]' + X + '{background:transparent !important}',
           P + '.cr-input-container' + X + '{background:transparent !important}',
+          // WorkDaddy 注入的输入框内联按钮（「暂存提示词」/「增强」）自带 90% 白底，在透明主题下
+          // 就是两个白圆块（用户实测反馈）。与同排的语音/模型选择按钮对齐：一律透明。
+          P + '[class*="wbs-stash-inline"]' + X + ',' + P + '[class*="wbs-explore-inline"]' + X + '{background:transparent !important;border-color:transparent !important}',
           // 输入框区域：毛玻璃背景（背景透出）
           P + '[class*="chat-input"]' + X + '{background:color-mix(in srgb,var(--wb-bg-primary) 40%,transparent) !important;backdrop-filter:blur(20px) saturate(1.15);-webkit-backdrop-filter:blur(20px) saturate(1.15)}',
           // 2026-10-13 移除「主内容区底部渐变」（原 38%→100% 压 55% 深色）：底部发暗的主因之一，

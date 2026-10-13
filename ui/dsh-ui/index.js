@@ -191,7 +191,11 @@ function fontCode() {
     'if(c){',
     'css+=SEL+"{color:"+c+" !important;-webkit-text-fill-color:"+c+" !important}";',
     'css+="html body *:not(#wdw-noop)::before,html body *:not(#wdw-noop)::after{color:"+c+" !important;-webkit-text-fill-color:"+c+" !important}";',
+    // SVG 文本 + 图标：图标的可见色来自 fill（宿主灌的是 rgb(255,255,255)），必须一起改，
+    // 否则「纯黑」下文字全黑、图标却还是白的（用户实测反馈）。
+    // 用 :not([fill=none]) 放过描边式图标，避免把空心图标填成实心块。
     'css+="html body svg text,html body svg tspan{fill:"+c+" !important}";',
+    'css+="html body svg:not([fill=none]),html body svg *:not([fill=none]){fill:"+c+" !important}";',
     '}',
     'var f=FAM[p.family]||"";',
     'if(f)css+=SEL+"{font-family:"+f+" !important}";',
