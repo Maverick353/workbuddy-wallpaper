@@ -1,0 +1,9 @@
+# 统一换行符为 LF（项目源码在 Windows 上编辑，避免 CRLF 反复抖动）
+* text=auto eol=lf
+
+# 二进制资源不做换行转换
+*.png binary
+*.webp binary
+*.jpg binary
+*.gif binary
+*.mp4 binary
