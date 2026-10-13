@@ -10,7 +10,7 @@
  *   · 页签内容（gap:12px + 180ms fade/上移 4px 落定）
  *   · 面板 token（--ui-h:30px / --ui-radius:8px / 墨色三级 / ease / dur-fast）
  *   · 设置行（左右分栏，min-height 32px）
- *   · 页签集合 = 壁纸库 / 外观 / 播放 / 系统 / 扩展 / 关于
+ *   · 页签集合 = 壁纸库 / 字体 / 系统 / 扩展 / 关于
  *
  * 功能布局：
  *   library   官方 + 自定义（含上传）+ WE 创意工坊
@@ -43,9 +43,18 @@ const REPO_FILTERS = [
 ];
 const TABS = [
   { id: 'library', label: '壁纸库' },
+  { id: 'font', label: '字体' },
   { id: 'system', label: '系统' },
   { id: 'extensions', label: '扩展' },
   { id: 'about', label: '关于' },
+];
+
+/** 字体页可选项（本机已装字体，零联网）。default = 不覆盖。 */
+const LS_FONT = 'wdw.font';
+const FONT_COLORS = [['default', '默认'], ['white', '纯白'], ['black', '纯黑']];
+const FONT_FAMILIES = [
+  ['default', '默认'], ['yahei', '微软雅黑'], ['simhei', '黑体'], ['simsun', '宋体'],
+  ['kaiti', '楷体'], ['dengxian', '等线'], ['mono', '等宽'],
 ];
 
 function wallpaperPanel(payload) {
@@ -54,6 +63,8 @@ function wallpaperPanel(payload) {
   var TABS = payload.tabs;
   var LS_TAB = payload.lsTab, LS_PREFS = payload.lsPrefs, LS_REPO = payload.lsRepo;
   var FILTERS = payload.filters;
+  // 字体页常量（必须走 payload —— 本函数会被 toString() 注入，模块级常量取不到）
+  var LS_FONT = payload.lsFont, FONT_COLORS = payload.fontColors, FONT_FAMILIES = payload.fontFamilies;
   // 宿主环境：闭包里存在 api(path, opts)（自带 X-WorkDaddy-Token）。独立环境取不到 → 走 fetch。
   // typeof 对未声明变量安全；payload.hostApi 为假时短路，连 typeof 都不求值。
   var HOST_API = payload.hostApi && typeof api === 'function' ? api : null;
@@ -326,6 +337,37 @@ function wallpaperPanel(payload) {
       + '</div>';
   }
 
+  // ── 字体页：文字颜色（默认/纯白/纯黑）+ 字体族（即时生效，只存本机 UI）──
+  function fontState() {
+    try { return JSON.parse(localStorage.getItem(LS_FONT) || '{}') || {}; } catch (_) { return {}; }
+  }
+  function setFont(key, val) {
+    // 优先走注入层的统一入口（它负责即时重绘 <style>）；缺失则退化为直接写 localStorage。
+    if (window.__wdwFont && typeof window.__wdwFont.set === 'function') { window.__wdwFont.set(key, val); return; }
+    var p = fontState(); p[key] = val;
+    try { localStorage.setItem(LS_FONT, JSON.stringify(p)); } catch (_) {}
+  }
+  function paneFont() {
+    var fs = fontState();
+    var color = fs.color || 'default';
+    var fam = fs.family || 'default';
+    return '<div class="p-pane">'
+      + '<div class="p-sec"><span class="p-sec-t">文字颜色</span>'
+      + row('显示文字', '把界面文字改成纯白或纯黑（默认跟随主题）',
+        '<div class="p-seg" style="width:186px">' + FONT_COLORS.map(function (c) {
+          return '<button data-fontcolor="' + c[0] + '" class="' + (color === c[0] ? 'wdw-on' : '') + '">' + c[1] + '</button>';
+        }).join('') + '</div>')
+      + '</div>'
+      + '<div class="p-sec"><span class="p-sec-t">字体</span>'
+      + row('字体类型', '整站字体族（本机已装，无需联网）',
+        '<select id="wdw-fontfamily" style="width:132px">' + FONT_FAMILIES.map(function (f) {
+          return '<option value="' + f[0] + '"' + (fam === f[0] ? ' selected' : '') + '>' + f[1] + '</option>';
+        }).join('') + '</select>')
+      + '</div>'
+      + '<div class="p-hint">颜色与字体即时生效，只存本机 UI（localStorage ' + LS_FONT + '）。</div>'
+      + '</div>';
+  }
+
   function paneSystem() {
     var buddy = window.__wdwRopeBuddy;
     return '<div class="p-pane">' + offlineBarHtml()
@@ -352,7 +394,7 @@ function wallpaperPanel(payload) {
     return '<div class="p-pane">'
       + '<div class="p-sec"><span class="p-sec-t">壁纸引擎</span>'
       + row('版本', '插件内核 workdaddy.wallpaper', '<span class="p-hint">v1.1.0</span>')
-      + row('UI 规格', '原创玻璃拟态视觉语言', '<span class="p-hint">rope dock + 6 页签</span>')
+      + row('UI 规格', '原创玻璃拟态视觉语言', '<span class="p-hint">rope dock + 5 页签</span>')
       + row('许可', 'AGPL-3.0-or-later', '<span class="p-hint">含 MIT 第三方声明</span>')
       + '</div>'
       + '<div class="p-sec"><span class="p-sec-t">数据</span>'
@@ -368,6 +410,7 @@ function wallpaperPanel(payload) {
 
   function paneHtml() {
     switch (st.tab) {
+      case 'font': return paneFont();
       case 'system': return paneSystem();
       case 'extensions': return paneExtensions();
       case 'about': return paneAbout();
@@ -498,7 +541,7 @@ function wallpaperPanel(payload) {
         // 下面的 closest 全部落空 → 用户体感「点了没反应」（实测复现：target=ASIDE）。
         // 兜底：所有已知交互选择器都未命中时，用事件坐标 elementFromPoint 找回
         // 视觉目标（= 用户意图目标）。注意必须在主匹配之后判断，不干扰正常路径。
-        var KNOWN = '.p-tab,[data-src],[data-rf],[data-fav],[data-del],.p-card,[data-act],.p-seg button,.p-chips button,.p-btn';
+        var KNOWN = '.p-tab,[data-src],[data-rf],[data-fav],[data-del],.p-card,[data-act],[data-fontcolor],.p-seg button,.p-chips button,.p-btn';
         if (typeof e.clientX === 'number' && !(t.closest && t.closest(KNOWN))) {
           var visual = document.elementFromPoint(e.clientX, e.clientY);
           if (visual && visual.closest && visual.closest(KNOWN)) t = visual;
@@ -506,6 +549,9 @@ function wallpaperPanel(payload) {
         // 页签
         var tabBtn = t.closest ? t.closest('.p-tab') : null;
         if (tabBtn) { setTab(tabBtn.getAttribute('data-tab')); return; }
+        // 字体页：文字颜色（纯白/纯黑/默认）
+        var fcBtn = t.closest ? t.closest('[data-fontcolor]') : null;
+        if (fcBtn) { setFont('color', fcBtn.getAttribute('data-fontcolor')); paint(); return; }
         // 来源分段
         var srcBtn = t.closest ? t.closest('[data-src]') : null;
         if (srcBtn) {
@@ -575,6 +621,7 @@ function wallpaperPanel(payload) {
 
     el.addEventListener('change', guard(function (e) {
       var t = e.target;
+      if (t.id === 'wdw-fontfamily') { setFont('family', t.value); return; }
       if (t.id === 'wdw-up-file' && t.files && t.files[0]) {
         var file = t.files[0];
         var rd = new FileReader();
@@ -601,7 +648,7 @@ function wallpaperPanel(payload) {
   // 与服务端 /api/shutdown 配合：服务退出 + 页面清净，用户视角「壁纸关掉了」。
   function teardownAll() {
     var ids = ['wdw-rope-buddy', 'wdw-wallpaper-panel', 'wdw-dsh-ui-style',
-      'wdw-rope-buddy-style', 'wdw-panel-style',
+      'wdw-rope-buddy-style', 'wdw-panel-style', 'wdw-font-style',
       'wdw-theme-style', 'wdw-bg-video', 'wdw-bg-scene'];
     for (var i = 0; i < ids.length; i++) {
       var e = document.getElementById(ids[i]);
@@ -652,7 +699,7 @@ function wallpaperPanel(payload) {
 }
 
 function panelExpression(payload) {
-  var p = Object.assign({ ids: IDS, tabs: TABS, lsTab: LS_TAB, lsPrefs: LS_PREFS, lsRepo: LS_REPO, filters: REPO_FILTERS }, payload || {});
+  var p = Object.assign({ ids: IDS, tabs: TABS, lsTab: LS_TAB, lsPrefs: LS_PREFS, lsRepo: LS_REPO, filters: REPO_FILTERS, lsFont: LS_FONT, fontColors: FONT_COLORS, fontFamilies: FONT_FAMILIES }, payload || {});
   return '(' + wallpaperPanel.toString() + ')(' + JSON.stringify(p) + ')';
 }
 

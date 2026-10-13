@@ -18,7 +18,7 @@ const { dataDir } = require('./server.js');
 
 const UI_UNINSTALL = '(function(){'
   + 'var removed=[];'
-  + '["wdw-rope-buddy","wdw-wallpaper-panel","wdw-dsh-ui-style","wdw-rope-buddy-style","wdw-panel-style"].forEach(function(id){var e=document.getElementById(id);if(e){e.remove();removed.push(id);}});'
+  + '["wdw-rope-buddy","wdw-wallpaper-panel","wdw-dsh-ui-style","wdw-rope-buddy-style","wdw-panel-style","wdw-font-style"].forEach(function(id){var e=document.getElementById(id);if(e){e.remove();removed.push(id);}});'
   + 'try{document.body.classList.remove("wdw-dsh-ui");}catch(_){}'
   + 'try{localStorage.removeItem("wdw.ui.mode");}catch(_){}'
   + '["__wdwRopeBuddy","__wdwPanel"].forEach(function(k){try{if(k in window)delete window[k];}catch(_){}});'

@@ -182,7 +182,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await injectAll();
     const st = await session.ev('JSON.stringify({rope:!!document.getElementById("wdw-rope-buddy"),panel:!!document.getElementById("wdw-wallpaper-panel"),yield:document.body.classList.contains("wdw-dsh-ui")})');
     log('注入完成：' + st);
-    log('拉绳 buddy 已挂到页面顶部；点它打开面板（壁纸库 / 外观 / 播放 / 系统 / 扩展 / 关于）');
+    log('拉绳 buddy 已挂到页面顶部；点它打开面板（壁纸库 / 字体 / 系统 / 扩展 / 关于）');
     log('Ctrl+C 停止（会自动卸载页面 UI 并关闭服务）');
   } catch (e) {
     log('首次注入失败：' + ((e && e.message) || e) + ' —— 转入断线重连自愈');
@@ -211,7 +211,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const bye = async () => {
     shuttingDown = true;
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-    const UI_UNINSTALL = '(function(){try{["wdw-rope-buddy","wdw-wallpaper-panel","wdw-dsh-ui-style","wdw-rope-buddy-style","wdw-panel-style"].forEach(function(id){var e=document.getElementById(id);if(e)e.remove();});try{document.body.classList.remove("wdw-dsh-ui");}catch(_){}try{localStorage.removeItem("wdw.ui.mode");}catch(_){}try{delete window.__wdwRopeBuddy;}catch(_){}try{delete window.__wdwPanel;}catch(_){}return "ok";}catch(e){return "err:"+e.message;}})()';
+    const UI_UNINSTALL = '(function(){try{["wdw-rope-buddy","wdw-wallpaper-panel","wdw-dsh-ui-style","wdw-rope-buddy-style","wdw-panel-style","wdw-font-style"].forEach(function(id){var e=document.getElementById(id);if(e)e.remove();});try{document.body.classList.remove("wdw-dsh-ui");}catch(_){}try{localStorage.removeItem("wdw.ui.mode");}catch(_){}try{delete window.__wdwRopeBuddy;}catch(_){}try{delete window.__wdwPanel;}catch(_){}return "ok";}catch(e){return "err:"+e.message;}})()';
     try { await session.ev(UI_UNINSTALL); } catch (_) {}
     try { await session.ev(bg.backgroundUninstallExpression()); } catch (_) {}
     try { started.server.close(); } catch (_) {}

@@ -163,6 +163,40 @@ function styleCode() {
   ].join('\n');
 }
 
+/** 字体皮肤：把「文字颜色（纯白/纯黑）」与「字体族」写进 `<style id="wdw-font-style">`。
+ *  独立于面板生命周期 —— 注入时即按 localStorage['wdw.font'] 应用；面板只负责改值
+ *  （window.__wdwFont.set）。两项都只在被选中时覆盖（默认 = 不产出任何规则）。 */
+function fontCode() {
+  return [
+    '(function(){',
+    'if(typeof document==="undefined")return;',
+    'var KEY="wdw.font";',
+    'var FAM={',
+    'default:"",',
+    'yahei:"\\"Microsoft YaHei\\",\\"微软雅黑\\",system-ui,sans-serif",',
+    'simhei:"SimHei,\\"黑体\\",sans-serif",',
+    'simsun:"SimSun,\\"宋体\\",serif",',
+    'kaiti:"KaiTi,\\"楷体\\",serif",',
+    'dengxian:"DengXian,\\"等线\\",sans-serif",',
+    'mono:"Consolas,\\"Courier New\\",monospace"',
+    '};',
+    'function read(){try{return JSON.parse(localStorage.getItem(KEY)||"{}")||{};}catch(_){return {};}}',
+    'function apply(){',
+    'var p=read();var css="";',
+    'var c=(p.color==="white")?"#ffffff":((p.color==="black")?"#000000":"");',
+    'if(c)css+="html,body,body *{color:"+c+" !important}";',
+    'var f=FAM[p.family]||"";',
+    'if(f)css+="html,body,body *{font-family:"+f+" !important}";',
+    'var s=document.getElementById("wdw-font-style");',
+    'if(!s){s=document.createElement("style");s.id="wdw-font-style";(document.head||document.documentElement).appendChild(s);}',
+    'if(s.textContent!==css)s.textContent=css;',
+    '}',
+    'window.__wdwFont={apply:apply,get:read,set:function(k,v){var p=read();p[k]=v;try{localStorage.setItem(KEY,JSON.stringify(p));}catch(_){}apply();}};',
+    'apply();',
+    '})();',
+  ].join('\n');
+}
+
 /**
  * 生成可注入代码（自执行表达式序列）。
  * @param {{ apiBase?: string, art?: string|null, hostApi?: boolean }} [opts]
@@ -180,8 +214,9 @@ function dshUIExpression(opts) {
   const panelExpr = panel.panelExpression(panelOpts);
 
   return [
-    '/* workbuddy-wallpaper · 壁纸 UI（拉绳 buddy + 六页签面板）*/',
+    '/* workbuddy-wallpaper · 壁纸 UI（拉绳 buddy + 五页签面板）*/',
     styleCode(),
+    fontCode(),
     yieldCode(),
     ropeExpr + ';',
     panelExpr + ';',
