@@ -103,6 +103,13 @@ function resolveBackgroundAssets(p) {
           'body[data-vscode-theme-name] .main-content{background:transparent !important}',
           // 左侧菜单（会话列表）透明，背景直接透出
           'body[data-vscode-theme-name] .conversation-list,body[data-vscode-theme-name] [data-view-id=sidebar]{background:transparent !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important}',
+          // 2026-10-14 定位：WorkBuddy 5.8.2 新增了三个**不透明的布局容器**，把整张壁纸盖死
+          //   （实测：.teams-grid-scroll-content = rgb(20,20,20) 覆盖 97% 视口、
+          //    ._gridView_<hash> = rgb(31,31,31) 覆盖 97%、.conversation-shell = rgb(20,20,20) 覆盖 74%）。
+          //   表现为「壁纸不显示 + 整页纯黑」。类名含 CSS-module 哈希，故 _gridView_ 用属性子串匹配。
+          'body[data-vscode-theme-name] .teams-grid-scroll-content{background:transparent !important}',
+          'body[data-vscode-theme-name] [class*="_gridView_"],body[data-vscode-theme-name] [class*="_gridViewItem_"]{background:transparent !important}',
+          'body[data-vscode-theme-name] .conversation-shell{background:transparent !important}',
           // 输入框区域：毛玻璃背景（背景透出）
           'body[data-vscode-theme-name] [class*="chat-input"]{background:color-mix(in srgb,var(--wb-bg-primary) 40%,transparent) !important;backdrop-filter:blur(20px) saturate(1.15);-webkit-backdrop-filter:blur(20px) saturate(1.15)}',
           // 2026-10-13 移除「主内容区底部渐变」（原 38%→100% 压 55% 深色）：底部发暗的主因之一，
