@@ -106,6 +106,12 @@ const CHROME_CSS = [
   //    rgb(42,44,49) 深色描边。排除自家面板（它有自己的玻璃边框语言与蓝色强调边框，
   //    被刷成白色会丢掉「当前项」高亮）。`:not(#id *)` 是 Selectors 4 的复合选择器写法，Chromium 支持。
   'html body *:not(#wdw-noop):not(#wdw-wallpaper-panel):not(#wdw-wallpaper-panel *){border-color:rgba(255,255,255,.16) !important;}',
+  // ⑥ 深色「内容块」→ 极淡白色玻璃（2026-10-14 用户：「这怎么还有黑的」，指 Markdown 表格表头）。
+  //    上一轮我把它们判为「内容该有底」而保留了，用户不认 —— 统一改成浅玻璃：既不留黑，
+  //    又比全透明更能框住内容（表头/代码块/工具输出/引用菜单/WorkDaddy 气泡）。
+  'th:not(#wdw-noop),[class*="cr-code-like-box"]:not(#wdw-noop),.cr-tool-exp__content:not(#wdw-noop),.cr-message-quote-table-menu:not(#wdw-noop),.wbs-explore-tip:not(#wdw-noop),[class*="cr-scroll-to-bottom"]:not(#wdw-noop){background-color:rgba(255,255,255,.08) !important;background-image:none !important;}',
+  // 头像圆底 rgb(41,41,41) → 浅玻璃；红色未读徽标属语义色，保留不动。
+  '.wb-avatar:not(#wdw-noop){background-color:rgba(255,255,255,.14) !important;}',
   // 承载 tooltip/dropdown 的**按钮/触发器容器**被 daemon 的 theme-patches 误涂：
   //   `html[data-theme=dark] body[data-vscode-theme-name] [class*="tooltip"]:not(…):not(…)…{background:var(--wb-bg-popover) !important}`
   //   （以及同族的 [class*="dropdown"]/[class*="popover"]/[class*="popper"]…）——作者已为若干
