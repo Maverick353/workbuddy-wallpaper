@@ -48,6 +48,26 @@
 - **Node.js ≥ 18**（零 npm 依赖，无需 `npm install`）
 - **WorkBuddy** 需带调试端口 `--remote-debugging-port=9222`（CDP 注入的前提）
 
+## 下载安装
+
+**方式一（推荐，不用 git）** —— 到 [**Releases**](https://github.com/Maverick353/workbuddy-wallpaper/releases/latest) 下载 `wallpaper-skill.zip`：
+
+1. 解压，把整个 **`wallpaper-skill` 文件夹**放进 `%USERPROFILE%\.workbuddy\skills\`
+2. 在该目录下执行：
+
+```bash
+node scripts/companion.js --install-autostart   # 开机自启（可选）
+node scripts/start-ui.js                        # 立即启动
+```
+
+**方式二（用 git）**
+
+```bash
+git clone https://github.com/Maverick353/workbuddy-wallpaper.git
+cd workbuddy-wallpaper
+node scripts/start-ui.js
+```
+
 ## 快速开始
 
 ```bash
