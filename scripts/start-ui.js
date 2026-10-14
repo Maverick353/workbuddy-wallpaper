@@ -126,7 +126,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   if (!cp) {
     log('未发现 CDP 端点（候选端口 ' + CDP_CANDIDATES.join('/') + '）。');
     log('宿主未开启远程调试时无法注入 UI —— 服务仍在运行，可直接调用 HTTP API。');
-    log('提示：WorkBuddy 需以 --remote-debugging-port=9222 启动（WorkDaddy 的看护进程可代劳）。');
+    log('提示：WorkBuddy 需以 --remote-debugging-port=9222 启动，否则界面注入不上。');
     return;
   }
   cdpPort = cp;

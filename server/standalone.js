@@ -34,11 +34,13 @@ function parseArgs(argv) {
 }
 
 function defaultDataDir() {
+  // 兜底目录（正常情况下 start-ui / server.js 都会显式传 dataDir 进来）。
+  // 这里曾残留父项目的工作目录名，会导致裸跑 standalone 时把数据写进 WorkDaddy 的目录里。
   if (process.platform === 'win32') {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'WorkDaddy');
+    return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'workbuddy-wallpaper');
   }
-  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'WorkDaddy');
-  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'WorkDaddy');
+  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'workbuddy-wallpaper');
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'workbuddy-wallpaper');
 }
 
 function json(res, code, obj) {

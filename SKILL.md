@@ -67,14 +67,14 @@ node scripts/stop-ui.js
 
 # 看门狗（随 WorkBuddy 启停本服务）
 node scripts/companion.js            # 常驻看门
-node scripts/companion.js --status   # 三行诊断
-node scripts/companion.js --install-autostart    # 开机自启
+node scripts/companion.js --status   # 四行诊断（WorkBuddy / 服务 / 端口 / CDP）
+node scripts/companion.js --install-autostart    # 开机自启（登录时动态解析路径）
 node scripts/companion.js --uninstall-autostart  # 取消自启
 node scripts/companion.js --stop-service         # 手动停服务
+node scripts/companion.js --stop-watchdog        # 停掉常驻看门狗
 
-# 自验证（21 项 + 前端注入契约）
+# 自验证（21 项：服务面 + 前端注入契约）
 node scripts/verify.js
-node scripts/verify-contract.js
 ```
 
 **一键安装为 WorkBuddy 技能**（复制到 `~/.workbuddy/skills/` 并可选注册开机自启）：
