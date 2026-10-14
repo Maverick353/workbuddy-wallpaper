@@ -14,7 +14,7 @@ const renderer = require('./renderer.js');
 const themeCss = require('./theme-css.js');
 
 const PLUGIN_ID = 'workdaddy.wallpaper';
-const PLUGIN_VERSION = '1.1.0';
+const PLUGIN_VERSION = '1.1.1';
 
 module.exports = {
   PLUGIN_ID,

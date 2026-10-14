@@ -172,6 +172,20 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   ok(nodeOk.ok === true, '当前 Node 满足 ≥22（本项目硬性要求）', process.version);
   ok(typeof resolveNode.resolveNode().exe === 'string', 'resolveNode 能解析出一个 node 路径');
 
+  // ── [9] 版本号一致性（防漂移）─────────────────────────────────────────
+  // 起因：v1.1.0 发布时才发现 SKILL.md / STORE.md 还停在 1.0.0，
+  //       README 里的安装包文件名也还是旧版本。版本号散在 6 个文件里，靠人记必漂 → 钉死在这里。
+  process.stdout.write('\n[9] 版本号一致性\n');
+  const pkgVer = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+  const readT = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+  ok(/^\d+\.\d+\.\d+$/.test(pkgVer), 'package.json 版本号格式合法', 'v' + pkgVer);
+  ok(readT('core/index.js').includes("PLUGIN_VERSION = '" + pkgVer + "'"), 'core/index.js 的 PLUGIN_VERSION 与 package.json 一致');
+  ok(readT('installer/setup.iss').includes('#define MyAppVersion "' + pkgVer + '"'), 'setup.iss 的 MyAppVersion 一致（决定 .exe 文件名）');
+  ok(readT('ui/dsh-ui/panel.js').includes('v' + pkgVer), '面板「关于」页显示的版本一致');
+  ok(readT('README.md').includes('workbuddy-wallpaper-setup-' + pkgVer + '.exe'), 'README 里的安装包文件名一致');
+  ok(readT('SKILL.md').includes('version: ' + pkgVer), 'SKILL.md 的 version 一致');
+  ok(readT('STORE.md').includes('`' + pkgVer + '`'), 'STORE.md 的版本一致');
+
   server.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
   process.stdout.write('\n通过 ' + pass + ' / 失败 ' + fail + '\n');
