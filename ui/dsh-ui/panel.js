@@ -445,8 +445,9 @@ function wallpaperPanel(payload) {
 
   function paneExtensions() {
     return '<div class="p-pane">'
-      + '<div class="p-sec"><span class="p-sec-t">与 WorkDaddy 联动</span>'
-      + row('主题引擎', '应用壁纸会写入当前主题背景', '<span class="p-hint">已启用</span>')
+      + '<div class="p-sec"><span class="p-sec-t">运行方式</span>'
+      + row('本地服务', '零依赖 Node 服务，只监听本机回环地址', '<span class="p-hint">127.0.0.1:47851</span>')
+      + row('页面注入', '通过调试通道注入界面，不改动宿主任何文件', '<span class="p-hint">CDP</span>')
       + '</div>'
       + '<div class="p-sec"><span class="p-sec-t">数据位置</span>'
       + row('仓库收藏', '收藏与过滤状态只存本机 UI（localStorage）', '<span class="p-hint">wdw.repo</span>')
