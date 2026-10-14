@@ -58,27 +58,38 @@
 
 ## 下载安装
 
-> ⚠️ **下载下来不会自己跑。** 解压只是把文件放到硬盘上，**必须执行一次安装命令**，
-> 之后它才会开机自启、并在 WorkBuddy 启动时自动跟上。
+> ⚠️ **下载下来不会自己跑。** 需要**双击一次**安装脚本（或跑 .exe 安装包），之后才是自动的。
+>
+> ✅ **不需要你预先装 Node** —— 脚本会先去找 WorkBuddy 自带的运行时
+> （`CODEBUDDY_NODE_BIN` → 内置版本目录），找不到才回退到系统 PATH。需要的是 **Node ≥ 22**。
 
-**方式一（推荐，不用 git）** —— 到 [**Releases**](https://github.com/Maverick353/workbuddy-wallpaper/releases/latest) 下载 `workbuddy-wallpaper.zip`：
+### 方式一：`.exe` 安装包（最省事，推荐给不写代码的人）
 
-1. 解压，把整个 **`workbuddy-wallpaper` 文件夹**放进 `%USERPROFILE%\.workbuddy\skills\`
-2. 在该目录下执行这两条（**第 1 条是关键**：注册开机自启，之后就不用再手动启动了）：
+到 [**Releases**](https://github.com/Maverick353/workbuddy-wallpaper/releases/latest) 下载
+**`workbuddy-wallpaper-setup-1.1.0.exe`** → 双击 → 下一步 → 完成。
 
-```bash
-node scripts/companion.js --install-autostart   # 注册开机自启 + 立刻拉起看门狗
-```
+装完会自动跑一次配置：找 Node → 装成技能 → 注册开机自启 → **检查调试端口** →
+没有就提出「帮你改快捷方式」。无需管理员权限（装进 `%LOCALAPPDATA%\Programs\`）。
 
-3. 完成。之后**打开 WorkBuddy 壁纸就会自己出现**，关掉 WorkBuddy 它自动停。
+> 未签名的包会触发 SmartScreen：点「**更多信息 → 仍要运行**」。这是没买代码签名证书的正常现象。
 
-> 只想试一次、不想常驻？那就跳过第 2 步，直接 `node scripts/start-ui.js`（Ctrl+C 退出）。
+### 方式二：压缩包 + 双击 `.cmd`（不用装任何东西）
 
-**方式二（用 git）**
+下载 `workbuddy-wallpaper.zip` → **解压** → 双击里面的：
+
+| 想干什么 | 双击哪个 |
+| --- | --- |
+| 装成 WorkBuddy 技能（顺带注册开机自启） | **`install.cmd`** ／ 中文名 **`一键安装.cmd`** |
+| 只想临时跑一下，不装进系统 | **`启动.cmd`**（绿色用法；首次会问一次"要不要开机自启"） |
+| 卸载 | **`uninstall.cmd`** ／ **`一键卸载.cmd`** |
+
+### 方式三：git（开发者）
 
 ```bash
 git clone https://github.com/Maverick353/workbuddy-wallpaper.git
 cd workbuddy-wallpaper
+node scripts/install.js        # 装成技能 + 注册自启
+# 或只在当前目录跑，不装：
 node scripts/start-ui.js
 ```
 
