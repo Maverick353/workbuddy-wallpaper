@@ -20,6 +20,9 @@ const ASSETS_WALLPAPERS = path.join(ROOT, 'assets', 'wallpapers');
 const APP_DIR_NAME = 'workbuddy-wallpaper';
 const { start, parseArgs } = require(path.join(ROOT, 'server', 'standalone.js'));
 
+// Node 版本自检（P0）：见 scripts/resolve-node.js。
+if (!require('./resolve-node.js').assertNodeOk('壁纸服务')) process.exit(1);
+
 /** 本技能自己的数据目录（与 WorkDaddy / WorkBuddy 的任何目录都无关）。 */
 function dataDir() {
   if (process.platform === 'win32') {

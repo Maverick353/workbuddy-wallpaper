@@ -25,10 +25,42 @@ const SKILL_NAME = 'workbuddy-wallpaper';
 const SKILLS_DIR = path.join(os.homedir(), '.workbuddy', 'skills');
 const DEST = path.join(SKILLS_DIR, SKILL_NAME);
 const COMPANION = path.join(DEST, 'scripts', 'companion.js');
+const STOP_UI = path.join(DEST, 'scripts', 'stop-ui.js');
+const DATA_DIR = path.join(process.env.APPDATA || os.homedir(), 'workbuddy-wallpaper');
 
 const EXCLUDE_TOP = new Set(['.git', 'node_modules', '_tmp', 'dist']);
 
 function log(...a) { process.stdout.write('[install] ' + a.join(' ') + '\n'); }
+
+/**
+ * 两个路径是否「同一个，或存在包含关系」。
+ * ⚠️ 这是自毁防护的核心判定：若 SRC === DEST（或互相嵌套），下面的 rmSync 会先把**源目录**删掉，
+ * 随后的 cpSync 从一个不存在的源复制 → 用户只是"重装一下"就丢了整份程序（且静默）。
+ * 历史上真会踩：用户按 README 手工把文件夹放进 skills 目录后，又照着文档跑了 install.js。
+ */
+function sameOrNested(a, b) {
+  const na = path.resolve(a).toLowerCase();
+  const nb = path.resolve(b).toLowerCase();
+  if (na === nb) return true;
+  const sep = path.sep.toLowerCase();
+  return na.startsWith(nb + sep) || nb.startsWith(na + sep);
+}
+
+/** 交互式 y/n；非 TTY 或读取失败时返回默认值（默认值一律取"保守"的那个）。 */
+function promptYesNo(question, def) {
+  try {
+    if (!process.stdin.isTTY) return def;
+    process.stdout.write(question);
+    const buf = Buffer.alloc(256);
+    const n = fs.readSync(0, buf, 0, 256, null);
+    const s = buf.slice(0, n).toString().trim().toLowerCase();
+    if (!s) return def;
+    return s === 'y' || s === 'yes' || s === '是';
+  } catch (_) {
+    process.stdout.write('\n');
+    return def;
+  }
+}
 
 /** 复制过滤器：排除运行时/临时/版本控制产物。 */
 function keep(src) {
@@ -54,10 +86,20 @@ function status() {
 
 function install(opts) {
   if (!fs.existsSync(SKILLS_DIR)) fs.mkdirSync(SKILLS_DIR, { recursive: true });
-  if (fs.existsSync(DEST)) { log('目标已存在 → 先清理（幂等）'); fs.rmSync(DEST, { recursive: true, force: true }); }
-  fs.mkdirSync(DEST, { recursive: true });
-  fs.cpSync(SRC, DEST, { recursive: true, filter: keep });
-  log('已复制到:', DEST);
+
+  // ⚠️ 自毁防护（P0）：本脚本若正跑在安装目录里，SRC === DEST，
+  //    下面若照常 rmSync 会先把源目录删掉 → cpSync 从空源复制 → 安装目录被清空且无有用提示。
+  //    正确处理：跳过复制（本来就已装好），只继续做「注册自启」这类无破坏动作。
+  const inPlace = sameOrNested(SRC, DEST);
+  if (inPlace) {
+    log('检测到本脚本运行在安装目录内（源 = 目标）→ 跳过复制，避免自毁。');
+    log('  你看到的这份就是已安装的副本；如需重新安装，请到项目源码目录再执行。');
+  } else {
+    if (fs.existsSync(DEST)) { log('目标已存在 → 先清理（幂等）'); fs.rmSync(DEST, { recursive: true, force: true }); }
+    fs.mkdirSync(DEST, { recursive: true });
+    fs.cpSync(SRC, DEST, { recursive: true, filter: keep });
+    log('已复制到:', DEST);
+  }
 
   if (opts.noAutostart) { log('已跳过开机自启（--no-autostart）'); }
   else if (fs.existsSync(COMPANION)) {
@@ -71,14 +113,38 @@ function install(opts) {
 
 function uninstall() {
   if (fs.existsSync(COMPANION)) {
+    // ① 先优雅摘除页面注入（走 CDP 让页面自己卸 DOM/CSS）。
+    //    顺序很重要：直接 taskkill /F 硬杀的话，浏览器端的 bye() 永远不会执行，
+    //    吉祥物/面板/CSS 会残留在 WorkBuddy 页面里直到宿主重启。
+    if (fs.existsSync(STOP_UI)) {
+      log('优雅移除页面 UI（CDP 摘除）…');
+      spawnSync(process.execPath, [STOP_UI], { stdio: 'inherit' });
+    }
     log('停止服务…');
     spawnSync(process.execPath, [COMPANION, '--stop-service'], { stdio: 'inherit' });
+    // ② 停看门狗：不停的话，它下个 tick 发现"WorkBuddy 在跑、服务没跑"，
+    //    会一直尝试从一个**即将被删掉的目录**拉起服务 → 无限退避循环刷日志。
+    log('停止看门狗…');
+    spawnSync(process.execPath, [COMPANION, '--stop-watchdog'], { stdio: 'inherit' });
     log('撤销开机自启…');
     spawnSync(process.execPath, [COMPANION, '--uninstall-autostart'], { stdio: 'inherit' });
   }
   if (fs.existsSync(DEST)) { fs.rmSync(DEST, { recursive: true, force: true }); log('已删除:', DEST); }
   else log('目标不存在，无需删除');
-  log('完成。（数据目录 %APPDATA%\\workbuddy-wallpaper 未动，如需清除请手动删除）');
+
+  // ③ 数据目录：里面有主题、缓存，以及用户可能自己上传的自定义壁纸 —— **默认保留**，明确问一次。
+  if (fs.existsSync(DATA_DIR)) {
+    const del = promptYesNo('数据目录还留着（含主题/缓存/你可能上传的自定义壁纸）：\n  ' + DATA_DIR +
+      '\n要一并删除吗？[y/N] ', false);
+    if (del) {
+      try { fs.rmSync(DATA_DIR, { recursive: true, force: true }); log('已删除数据目录'); }
+      catch (e) { log('删除数据目录失败：' + e.message + '（可手动删除）'); }
+    } else {
+      log('已保留数据目录。想手动清掉就删这个文件夹：');
+      log('  ' + DATA_DIR);
+    }
+  }
+  log('完成。');
 }
 
 const args = process.argv.slice(2);

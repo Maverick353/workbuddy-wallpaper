@@ -34,6 +34,10 @@ const dshUI = require(path.join(ROOT, 'ui', 'dsh-ui', 'index.js'));
 const bg = require(path.join(ROOT, 'ui', 'background.js'));
 const core = require(path.join(ROOT, 'core', 'index.js'));
 
+// Node 版本自检（P0）：cdp.js 依赖 Node 22 才有的全局 WebSocket。
+// 低版本下的表现是"服务正常在跑、界面永远不上屏"——最难查的静默失败，所以进门前就拦掉。
+if (!require('./resolve-node.js').assertNodeOk('壁纸服务')) process.exit(1);
+
 const BOOT = Date.now();
 const log = (...a) => process.stdout.write('[start-ui] ' + a.join(' ') + '\n');
 
