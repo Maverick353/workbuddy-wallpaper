@@ -52,6 +52,13 @@ const TABS = [
 /** 字体页常量。颜色 '' = 不覆盖（跟随主题）；其余是 #rrggbb。字体列表由服务端 /api/fonts 提供。 */
 const LS_FONT = 'wdw.font';
 const FONT_COLORS = [['#ffffff', '纯白'], ['#000000', '纯黑'], ['', '默认']];
+/** 常用色块：点一下即变（原生取色器在 Windows 是弹对话框，点选不方便）。 */
+const FONT_SWATCHES = [
+  '#ffffff', '#d9d9d9', '#8c8c8c', '#000000',
+  '#ff4d4f', '#ff7a45', '#ffa940', '#ffd666',
+  '#bae637', '#52c41a', '#13c2c2', '#40a9ff',
+  '#2f54eb', '#722ed1', '#eb2f96', '#f759ab',
+];
 
 function wallpaperPanel(payload) {
   var ID = payload.ids;
@@ -60,7 +67,7 @@ function wallpaperPanel(payload) {
   var LS_TAB = payload.lsTab, LS_PREFS = payload.lsPrefs, LS_REPO = payload.lsRepo;
   var FILTERS = payload.filters;
   // 字体页常量（必须走 payload —— 本函数会被 toString() 注入，模块级常量取不到）
-  var LS_FONT = payload.lsFont, FONT_COLORS = payload.fontColors;
+  var LS_FONT = payload.lsFont, FONT_COLORS = payload.fontColors, FONT_SWATCHES = payload.fontSwatches || [];
   // 宿主环境：闭包里存在 api(path, opts)（自带 X-WorkDaddy-Token）。独立环境取不到 → 走 fetch。
   // typeof 对未声明变量安全；payload.hostApi 为假时短路，连 typeof 都不求值。
   var HOST_API = payload.hostApi && typeof api === 'function' ? api : null;
@@ -218,6 +225,10 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' input[type=color]{width:40px;height:24px;padding:0;border:1px solid var(--wdw-glass-line);border-radius:8px;background:transparent;cursor:pointer}',
       '#' + ID.root + ' input[type=color]::-webkit-color-swatch-wrapper{padding:2px}',
       '#' + ID.root + ' input[type=color]::-webkit-color-swatch{border:0;border-radius:5px}',
+      '#' + ID.root + ' .p-swatches{display:flex;flex-wrap:wrap;gap:6px;max-width:132px;justify-content:flex-end}',
+      '#' + ID.root + ' .p-swatch{width:20px;height:20px;padding:0;border-radius:6px;border:1px solid rgba(255,255,255,.28);cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25)}',
+      '#' + ID.root + ' .p-swatch:hover{transform:scale(1.12)}',
+      '#' + ID.root + ' .p-swatch.p-swatch--on{box-shadow:0 0 0 2px var(--wdw-accent,#4f8cff),0 1px 3px rgba(0,0,0,.25)}',
       '#' + ID.root + ' .p-fontlist{display:flex;flex-wrap:wrap;gap:6px;max-height:220px;overflow-y:auto;padding:6px;margin:4px 0 8px;border-radius:12px;background:var(--wdw-glass-fill,rgba(255,255,255,.05));border:1px solid var(--wdw-glass-line,rgba(255,255,255,.12))}',
       '#' + ID.root + ' .p-font{max-width:100%;height:26px;padding:0 9px;border-radius:8px;border:1px solid var(--wdw-glass-line,rgba(255,255,255,.12));background:rgba(255,255,255,.05);color:inherit;cursor:pointer;font-size:12px;line-height:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:background var(--wdw-dur-fast)}',
       '#' + ID.root + ' .p-font:hover{background:rgba(255,255,255,.14)}',
@@ -396,6 +407,11 @@ function wallpaperPanel(payload) {
       + row('调色盘', '任选颜色，即时生效',
         '<div class="p-colorwrap"><input type="color" id="wdw-fontcolor" value="' + (isHex ? color : '#ffffff') + '">'
         + '<span class="p-hint" id="wdw-fontcolor-v">' + esc(isHex ? color.toUpperCase() : '跟随主题') + '</span></div>')
+      + row('常用色', '点一下就换成这个颜色',
+        '<div class="p-swatches">' + FONT_SWATCHES.map(function (c) {
+          var on = isHex && c.toLowerCase() === color.toLowerCase();
+          return '<button type="button" class="p-swatch' + (on ? ' p-swatch--on' : '') + '" data-fontcolor="' + c + '" title="' + c + '" style="background:' + c + '"></button>';
+        }).join('') + '</div>')
       + row('快捷', '纯白 / 纯黑 / 恢复默认',
         '<div class="p-seg" style="width:196px">' + FONT_COLORS.map(function (c) {
           var on = (c[0] === '') ? !isHex : (isHex && c[0].toLowerCase() === color.toLowerCase());
@@ -768,7 +784,7 @@ function wallpaperPanel(payload) {
 }
 
 function panelExpression(payload) {
-  var p = Object.assign({ ids: IDS, tabs: TABS, lsTab: LS_TAB, lsPrefs: LS_PREFS, lsRepo: LS_REPO, filters: REPO_FILTERS, lsFont: LS_FONT, fontColors: FONT_COLORS }, payload || {});
+  var p = Object.assign({ ids: IDS, tabs: TABS, lsTab: LS_TAB, lsPrefs: LS_PREFS, lsRepo: LS_REPO, filters: REPO_FILTERS, lsFont: LS_FONT, fontColors: FONT_COLORS, fontSwatches: FONT_SWATCHES }, payload || {});
   return '(' + wallpaperPanel.toString() + ')(' + JSON.stringify(p) + ')';
 }
 
