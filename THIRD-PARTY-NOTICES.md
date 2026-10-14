@@ -1,10 +1,10 @@
 # 第三方许可与来源声明（THIRD-PARTY NOTICES）
 
-workdaddy-wallpaper-skill 自身以 **AGPL-3.0-or-later** 分发（见 `LICENSE`）。其包含或派生的第三方组件如下，均按各自许可使用。
+壁纸 Skill（wallpaper-skill / 仓库 `workbuddy-wallpaper`）自身以 **AGPL-3.0-or-later** 分发（见 `LICENSE`）。其包含或派生的第三方组件如下，均按各自许可使用。
 
 ## 1. webwallgl — MIT
 
-- 用途：场景（Scene）壁纸实时渲染器，随包分发于 `wallpaper/renderer/`（`web-shim.js`、`assets/renderer-*.js`、`default-wallpaper/`），版本 2.1.0（commit `4ba71c406fbc78f24c99b1bb1edd9d9cef9793c8`）。
+- 用途：场景（Scene）壁纸实时渲染器，随包分发于 `renderer/`（`web-shim.js`、`assets/renderer-*.js`、`default-wallpaper/`），版本 2.1.0（commit `4ba71c406fbc78f24c99b1bb1edd9d9cef9793c8`）。
 - 来源：https://github.com/oneincase/webwallgl （MIT）
 - 分发形式：官方构建产物（dist）原样 vendored，未修改。
 
@@ -34,7 +34,7 @@ SOFTWARE.
 
 ## 2. WorkDaddy — AGPL-3.0-or-later
 
-- 用途：本技能的内核逻辑（`wallpaper/core/*`、`wallpaper/server/*`）抽取自 WorkDaddy 的壁纸插件（`scripts/plugins/wallpaper/`）。
+- 用途：本技能的内核逻辑（`core/*`、`server/*`）抽取并改造自 WorkDaddy 的壁纸插件（其 `scripts/plugins/wallpaper/`）。
 - 来源：https://github.com/babygoton/WorkDaddy
 - 义务：因派生自 AGPL 代码，本技能整体以 AGPL-3.0-or-later 同许可分发；再分发/修改须保留本声明与 `LICENSE`。
 
