@@ -46,21 +46,11 @@ function sameOrNested(a, b) {
   return na.startsWith(nb + sep) || nb.startsWith(na + sep);
 }
 
-/** 交互式 y/n；非 TTY 或读取失败时返回默认值（默认值一律取"保守"的那个）。 */
-function promptYesNo(question, def) {
-  try {
-    if (!process.stdin.isTTY) return def;
-    process.stdout.write(question);
-    const buf = Buffer.alloc(256);
-    const n = fs.readSync(0, buf, 0, 256, null);
-    const s = buf.slice(0, n).toString().trim().toLowerCase();
-    if (!s) return def;
-    return s === 'y' || s === 'yes' || s === '是';
-  } catch (_) {
-    process.stdout.write('\n');
-    return def;
-  }
-}
+// ⚠️ 这里原本有个 promptYesNo()（交互式 y/n）。2026-10-14 已删除，**不要再加回来**：
+//    它的守卫只检查 `process.stdin.isTTY`，而卸载器用 `runhidden` 跑 uninstall.cmd 时
+//    继承来的 stdin **仍然是控制台**（isTTY 为真）→ `fs.readSync(0)` 永久阻塞，
+//    提问窗口却看不见、也没人能输入 → 卸载卡死。
+//    这个项目的安装/卸载路径里**不允许出现任何交互提问**：需要用户决策的一律走显式命令行开关。
 
 /**
  * 递归删除一个目录树 —— **刻意不用 `fs.rmSync`**。
@@ -169,7 +159,7 @@ function install(opts) {
   log('  手动启动：node "' + path.join(DEST, 'scripts', 'start-ui.js') + '"');
 }
 
-function uninstall() {
+function uninstall(purgeData) {
   if (fs.existsSync(COMPANION)) {
     // ① 先优雅摘除页面注入（走 CDP 让页面自己卸 DOM/CSS）。
     //    顺序很重要：直接 taskkill /F 硬杀的话，浏览器端的 bye() 永远不会执行，
@@ -190,16 +180,22 @@ function uninstall() {
   if (fs.existsSync(DEST)) { removeTree(DEST); log('已删除:', DEST); }
   else log('目标不存在，无需删除');
 
-  // ③ 数据目录：里面有主题、缓存，以及用户可能自己上传的自定义壁纸 —— **默认保留**，明确问一次。
+  // ③ 数据目录：里面有主题、缓存，以及用户可能自己上传的自定义壁纸 —— **默认保留**。
+  //
+  // ⚠️ 2026-10-14 实测事故：这里原本是**交互提问**「要一并删除吗？[y/N]」。
+  //    而卸载器是用 `runhidden` 跑 uninstall.cmd 的 —— **提问根本看不见，也没人能输入**，
+  //    于是 `fs.readSync(0)` 永久阻塞 → 用户点「卸载」只会看到进度条卡死、
+  //    技能目录都删不掉，得靠任务管理器结束进程。
+  //    （`process.stdin.isTTY` 这个守卫挡不住：从卸载器继承来的 stdin 仍是控制台。）
+  //    结论：**卸载路径里绝不能有交互提问**。要删数据必须显式加 `--purge-data`。
   if (fs.existsSync(DATA_DIR)) {
-    const del = promptYesNo('数据目录还留着（含主题/缓存/你可能上传的自定义壁纸）：\n  ' + DATA_DIR +
-      '\n要一并删除吗？[y/N] ', false);
-    if (del) {
-      try { removeTree(DATA_DIR); log('已删除数据目录'); }
+    if (purgeData) {
+      try { removeTree(DATA_DIR); log('已删除数据目录（--purge-data）：' + DATA_DIR); }
       catch (e) { log('删除数据目录失败：' + e.message + '（可手动删除）'); }
     } else {
-      log('已保留数据目录。想手动清掉就删这个文件夹：');
+      log('已保留数据目录（含主题/缓存/你可能上传的自定义壁纸）：');
       log('  ' + DATA_DIR);
+      log('  要一并删除：再执行一次 `node scripts/install.js --uninstall --purge-data`');
     }
   }
   log('完成。');
@@ -210,11 +206,11 @@ function uninstall() {
 if (require.main === module) {
   const args = process.argv.slice(2);
   if (args.includes('-h') || args.includes('--help')) {
-    console.log('用法: node scripts/install.js [--no-autostart | --uninstall | --status]');
+    console.log('用法: node scripts/install.js [--no-autostart | --uninstall [--purge-data] | --status]');
     process.exit(0);
   }
   if (args.includes('--status')) { status(); process.exit(0); }
-  if (args.includes('--uninstall')) { uninstall(); process.exit(0); }
+  if (args.includes('--uninstall')) { uninstall(args.includes('--purge-data')); process.exit(0); }
   install({ noAutostart: args.includes('--no-autostart') });
 }
 

@@ -186,6 +186,17 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   ok(readT('SKILL.md').includes('version: ' + pkgVer), 'SKILL.md 的 version 一致');
   ok(readT('STORE.md').includes('`' + pkgVer + '`'), 'STORE.md 的版本一致');
 
+  // ── [10] 卸载路径不允许有交互提问 ─────────────────────────────────────
+  // 起因：install.js 的 uninstall() 里原本有个「数据目录要一并删除吗？[y/N]」的交互提问。
+  // 卸载器用 `runhidden` 跑 uninstall.cmd，提问窗口看不见、也没人能输入，
+  // 而 process.stdin.isTTY 仍为真（继承自控制台）→ fs.readSync(0) 永久阻塞
+  // → **用户点「卸载」只看到进度条卡死**。实测卡了 4 分钟以上，得靠任务管理器结束。
+  process.stdout.write('\n[10] 卸载路径不阻塞\n');
+  const installSrc = readT('scripts/install.js');
+  ok(!/function\s+promptYesNo\s*\(/.test(installSrc), 'install.js 里没有交互提问函数（会把隐藏运行的卸载器挂死）');
+  ok(!/readSync\(\s*0\s*,/.test(installSrc), 'install.js 里没有对 stdin 的同步读（会永久阻塞）');
+  ok(installMod.uninstall.length >= 1, 'uninstall(purgeData) 接受参数：删数据必须显式 --purge-data');
+
   server.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
   process.stdout.write('\n通过 ' + pass + ' / 失败 ' + fail + '\n');

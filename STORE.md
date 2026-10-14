@@ -9,7 +9,7 @@
 |---|---|
 | **展示名（商店里看到的）** | **workbuddy-wallpaper** |
 | 标识（slug / SKILL.md `name`） | `workbuddy-wallpaper` |
-| 版本 | `1.1.1` |
+| 版本 | `1.1.2` |
 | 许可 | AGPL-3.0-or-later |
 | 分类建议 | 效率工具 / 桌面美化 |
 | 仓库/主页 | （可选，如有） |
@@ -58,7 +58,7 @@ A companion watchdog follows WorkBuddy's lifecycle and can auto-start at login.
 **本机没有 SkillHub 的 CLI，也没有发布凭证 —— 我无法代替你提交。** 实际路径：
 
 1. 打开 SkillHub 的开发者/上传入口（网页端），用你的账号登录。
-2. 新建技能，**展示名填「workbuddy-wallpaper」**，标识填 `workbuddy-wallpaper`，版本 `1.1.1`。
+2. 新建技能，**展示名填「workbuddy-wallpaper」**，标识填 `workbuddy-wallpaper`，版本 `1.1.2`。
 3. 上传安装包 `dist/workbuddy-wallpaper.zip`（内部结构：`workbuddy-wallpaper/SKILL.md` + `scripts/` + `ui/` + `core/` + `server/` + `renderer/` + `assets/`）。
 4. 粘贴上面的中/英简介与描述、示例提示词，选择分类。
 5. 确认许可为 AGPL-3.0-or-later（因代码抽取自 WorkDaddy，**必须**同许可分发），提交审核。

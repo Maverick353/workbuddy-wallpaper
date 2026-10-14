@@ -21,7 +21,7 @@
 ; ============================================================================
 
 #define MyAppName "workbuddy-wallpaper"
-#define MyAppVersion "1.1.1"
+#define MyAppVersion "1.1.2"
 #define MyAppPublisher "Maverick353"
 #define MyAppURL "https://github.com/Maverick353/workbuddy-wallpaper"
 #define MyAppExeName "启动.cmd"
@@ -44,6 +44,15 @@ OutputBaseFilename=workbuddy-wallpaper-setup-{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+; 让 .exe 在「文件属性」里能看到版本 —— 实测 v1.1.1 的安装包**版本资源是空的**
+; （VerQueryValue 读 ProductVersion/FileVersion 全取不到，SmartScreen/兼容性判断会少一条信息）。
+; VersionInfoVersion 要求 4 段数字，所以补一个 .0。
+VersionInfoVersion={#MyAppVersion}.0
+VersionInfoProductVersion={#MyAppVersion}.0
+VersionInfoProductName={#MyAppName}
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription={#MyAppName} - WorkBuddy 壁纸引擎安装包
+VersionInfoCopyright=AGPL-3.0-or-later
 ; 未签名 → 不声明 signed；用户会看到 SmartScreen 提示（README / 下载页有说明）
 
 [Languages]
