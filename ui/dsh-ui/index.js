@@ -112,6 +112,18 @@ const CHROME_CSS = [
   'th:not(#wdw-noop),[class*="cr-code-like-box"]:not(#wdw-noop),.cr-tool-exp__content:not(#wdw-noop),.cr-message-quote-table-menu:not(#wdw-noop),.wbs-explore-tip:not(#wdw-noop),[class*="cr-scroll-to-bottom"]:not(#wdw-noop){background-color:rgba(255,255,255,.08) !important;background-image:none !important;}',
   // 头像圆底 rgb(41,41,41) → 浅玻璃；红色未读徽标属语义色，保留不动。
   '.wb-avatar:not(#wdw-noop){background-color:rgba(255,255,255,.14) !important;}',
+  // ⑦ 其它视图的「页面根容器」（2026-10-14 用户报：点进助理/专家/定时任务/资料库看不到壁纸）。
+  //    每个视图都是**一整块 rgb(10~27) 不透明底盖住 83% 屏**：
+  //      · 助理 = .claw-workspace          · 专家·技能·连接器 = .expert-center-page
+  //      · 定时任务 = .automation-main-page · 资料库 = .main-layout-{wrapper,content}-pc
+  //                                            + .knowledge-sidebar-pc（14%）
+  //    除逐个点名外，另加 `[class$="-page"]` / `[class*="_page_"]` 通配 —— 宿主新增视图
+  //    （CSS-module 页面根多以此命名）可自动覆盖，避免每加一个视图就要重新排查一遍。
+  '[class*="claw-workspace"]:not(#wdw-noop),[class*="expert-center-page"]:not(#wdw-noop),[class*="automation-main-page"]:not(#wdw-noop),[class*="_page_"]:not(#wdw-noop),[class$="-page"]:not(#wdw-noop),[class*="main-layout-wrapper"]:not(#wdw-noop),[class*="main-layout-content"]:not(#wdw-noop),[class*="knowledge-sidebar"]:not(#wdw-noop),[class*="memory-sidebar-wrapper"]:not(#wdw-noop),[class*="wb-feed-virtual-scroll"]:not(#wdw-noop),[class*="wb-home-page-header"]:not(#wdw-noop),[class*="wb-home-tab-row"]:not(#wdw-noop),[class*="wb-home-page-title"]:not(#wdw-noop){background-color:transparent !important;background-image:none !important;}',
+  // ⑧ 这些视图里的内容卡片 / 浮层 → 极淡白玻璃（不留黑，但保留层次）。
+  //    实测来源：专家中心的 `._experts_<hash>` 卡、`._card_<hash>`、定时任务的 `.wb-card--outlined`、
+  //    资料库的 `.wb-home-guide-*card-pc`。用 `wb-card` / `_card` / `_experts_` 通配一并覆盖。
+  '[class*="wb-card"]:not(#wdw-noop),[class*="_card"]:not(#wdw-noop),[class*="_experts_"]:not(#wdw-noop),[class*="wb-home-guide"]:not(#wdw-noop),[class*="wbs-session-usage-popover"]:not(#wdw-noop),[class*="wbs-fork-tooltip"]:not(#wdw-noop){background-color:rgba(255,255,255,.06) !important;background-image:none !important;}',
   // 承载 tooltip/dropdown 的**按钮/触发器容器**被 daemon 的 theme-patches 误涂：
   //   `html[data-theme=dark] body[data-vscode-theme-name] [class*="tooltip"]:not(…):not(…)…{background:var(--wb-bg-popover) !important}`
   //   （以及同族的 [class*="dropdown"]/[class*="popover"]/[class*="popper"]…）——作者已为若干
