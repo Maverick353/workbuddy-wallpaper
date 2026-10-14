@@ -20,6 +20,39 @@ agent_created: true
 - 需要把壁纸与 UI 画进 WorkBuddy 窗口（玻璃拟态面板 + 可拖拽的拉绳吉祥物）
 - 为其它程序/面板提供壁纸能力（纯 HTTP API，可脱离任何宿主独立运行）
 
+## 首次使用（装好技能后先做这一步）
+
+**装上技能 ≠ 立刻能用。** 首次必须先过两关，缺任一个都是「装了没反应」：
+
+### 第 1 关：WorkBuddy 必须带调试端口启动（CDP 注入的唯一前提）
+
+```bash
+node scripts/companion.js --status
+```
+
+- 第 4 行输出 `CDP 9222: LISTENING（可注入 UI）` → 过关
+- 第 4 行输出 `未监听` → **注入不了，后面做什么都没用**。让 WorkBuddy 以调试端口启动：
+  桌面快捷方式 → 右键**属性** → **目标**末尾加一个空格再加 `--remote-debugging-port=9222`
+  （形如 `"D:\...\WorkBuddy.exe" --remote-debugging-port=9222`）→ 保存后用**这个快捷方式重启 WorkBuddy**。
+
+### 第 2 关：服务要有人启动（技能不会自己跑）
+
+```bash
+node scripts/companion.js --install-autostart   # 注册开机自启 + 立刻拉起看门狗（推荐，一次搞定）
+# 或只想试一次：
+node scripts/start-ui.js
+```
+
+过完这两关：**打开 WorkBuddy 壁纸自己出现，关掉自动停**。之后日常只需点窗口顶部的拉绳吉祥物开面板。
+
+### 依赖清单（其余都不用管）
+
+| 需要 | 说明 |
+|---|---|
+| Windows | 看门狗/安装脚本依赖 Windows 命令 |
+| Node ≥ 18 | **零 npm 依赖**，无需 `npm install`；WorkBuddy 自带运行时即可 |
+| Wallpaper Engine | **可选**。只有要用创意工坊壁纸才需要；上传自定义图片/视频**不需要** |
+
 ## 快速开始
 
 ```bash

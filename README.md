@@ -46,7 +46,15 @@
 
 - **Windows**（依赖 `tasklist` / `taskkill` / `netstat`）
 - **Node.js ≥ 18**（零 npm 依赖，无需 `npm install`）
-- **WorkBuddy** 需带调试端口 `--remote-debugging-port=9222`（CDP 注入的前提）
+- **WorkBuddy 必须带调试端口 `--remote-debugging-port=9222` 启动** ← **这是最容易卡住的一关**
+
+  > 没有这个参数，**注入不了**，装了什么都不会有反应。
+  > 检查：`node scripts/companion.js --status` → 看第 4 行是否 `CDP 9222: LISTENING`。
+  > 开启：WorkBuddy 桌面快捷方式 → 右键属性 → **目标**末尾加一个空格 + `--remote-debugging-port=9222`
+  > → 保存后**用这个快捷方式重启 WorkBuddy**。
+  > （官方自动更新重启后可能丢掉这个参数，表现是壁纸突然消失 —— 用快捷方式重启即可恢复。）
+
+- **Wallpaper Engine 是可选的** —— 只有要用创意工坊壁纸才需要；上传自定义图片/视频不需要
 
 ## 下载安装
 
