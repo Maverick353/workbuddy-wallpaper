@@ -116,6 +116,15 @@ function readPidFile() {
 
 function removePidFile() { try { fs.unlinkSync(PID_FILE); } catch (_) {} }
 
+/**
+ * 回写 .ui.pid。
+ * 用途：端口上已经有活服务、但 pid 文件丢了（被手工删掉 / 写盘失败）时**复用**它，
+ * 而不是再 spawn 一个（那会因端口占用起不来，陷入「每 30s 失败一次」的空转）。
+ */
+function writePidFile(pid) {
+  try { fs.writeFileSync(PID_FILE, String(pid)); return true; } catch (_) { return false; }
+}
+
 /** netstat -ano 输出（一次调用供多处端口判定复用）。 */
 function netstatOut() {
   const r = spawnSync('netstat', ['-ano'], { windowsHide: true, encoding: 'buffer' });
@@ -265,6 +274,18 @@ function ensureService() {
     portDownStreak = 0;
   } else {
     portDownStreak = 0;
+    // ⚠️ pid 文件缺失/失效 ≠ 服务真的没跑：端口可能仍被一个**活着的**服务占着
+    //    （`.ui.pid` 被手工删掉、写盘失败、或 pid 被复用都会这样）。
+    //    此时若直接 spawn，新进程会因端口占用起不来 → 每 30s 失败一次空转，而旧服务一直在正常干活。
+    //    **先探端口，能复用就复用**：回写 pid 文件即恢复判断。
+    const live = portListening(DEFAULT_PORT);
+    if (live.listening) {
+      const ok = writePidFile(live.pid);
+      log('检测到 ' + DEFAULT_PORT + ' 上已有服务在跑 (pid=' + live.pid + ') → 复用' +
+          (ok ? '并回写 .ui.pid' : '（pid 文件回写失败，仅本次跳过重启）'));
+      backoffUntil = 0;
+      return;
+    }
   }
   if (Date.now() < backoffUntil) return;                       // 退避中，不重启风暴
   // 用户主动关闭过（面板「关闭壁纸」→ 服务写 .stopped）：不自动拉起，
