@@ -1,14 +1,14 @@
-# SkillHub 上架物料 · 壁纸 Skill
+# SkillHub 上架物料 · workbuddy-wallpaper
 
-> 本文件是「壁纸 Skill」提交到 SkillHub 商店所需的全部材料。
-> 安装包：`dist/wallpaper-skill.zip`（由官方 `package_skill.py` 校验并打包，校验结果 `Skill is valid!`）
+> 本文件是「workbuddy-wallpaper」提交到 SkillHub 商店所需的全部材料。
+> 安装包：`dist/workbuddy-wallpaper.zip`（由官方 `package_skill.py` 校验并打包，校验结果 `Skill is valid!`）
 
 ## 商店信息
 
 | 字段 | 值 |
 |---|---|
-| **展示名（商店里看到的）** | **壁纸 Skill** |
-| 标识（slug / SKILL.md `name`） | `wallpaper-skill` |
+| **展示名（商店里看到的）** | **workbuddy-wallpaper** |
+| 标识（slug / SKILL.md `name`） | `workbuddy-wallpaper` |
 | 版本 | `1.0.0` |
 | 许可 | AGPL-3.0-or-later |
 | 分类建议 | 效率工具 / 桌面美化 |
@@ -58,15 +58,15 @@ A companion watchdog follows WorkBuddy's lifecycle and can auto-start at login.
 **本机没有 SkillHub 的 CLI，也没有发布凭证 —— 我无法代替你提交。** 实际路径：
 
 1. 打开 SkillHub 的开发者/上传入口（网页端），用你的账号登录。
-2. 新建技能，**展示名填「壁纸 Skill」**，标识填 `wallpaper-skill`，版本 `1.0.0`。
-3. 上传安装包 `dist/wallpaper-skill.zip`（内部结构：`wallpaper-skill/SKILL.md` + `scripts/` + `ui/` + `core/` + `server/` + `renderer/` + `assets/`）。
+2. 新建技能，**展示名填「workbuddy-wallpaper」**，标识填 `workbuddy-wallpaper`，版本 `1.0.0`。
+3. 上传安装包 `dist/workbuddy-wallpaper.zip`（内部结构：`workbuddy-wallpaper/SKILL.md` + `scripts/` + `ui/` + `core/` + `server/` + `renderer/` + `assets/`）。
 4. 粘贴上面的中/英简介与描述、示例提示词，选择分类。
 5. 确认许可为 AGPL-3.0-or-later（因代码抽取自 WorkDaddy，**必须**同许可分发），提交审核。
 
 ## 上架前自检
 
 - [x] `quick_validate.py` 通过（`Skill is valid!`）
-- [x] SKILL.md frontmatter：`name` 为 hyphen-case（`wallpaper-skill`）、含 `description` / `description_zh` / `description_en` / `license` / `version`
+- [x] SKILL.md frontmatter：`name` 为 hyphen-case（`workbuddy-wallpaper`）、含 `description` / `description_zh` / `description_en` / `license` / `version`
 - [x] 包内不含 `.git` / `_tmp` / `dist` / `*.log`（由 `scripts/install.js` 的过滤器保证）
 - [x] 自验证套件 21/21（`node scripts/verify.js`）
 - [ ] 页面文案中「官方壁纸库」已在 2026-10-13 移除（当前库页来源 = 自定义 + WE 库）
@@ -75,7 +75,7 @@ A companion watchdog follows WorkBuddy's lifecycle and can auto-start at login.
 ## 重新打包
 
 ```bash
-node scripts/install.js --no-autostart        # 同步到 ~/.workbuddy/skills/wallpaper-skill
+node scripts/install.js --no-autostart        # 同步到 ~/.workbuddy/skills/workbuddy-wallpaper
 <skill-creator>/scripts/package_skill.py \
-    "$USERPROFILE/.workbuddy/skills/wallpaper-skill" ./dist
+    "$USERPROFILE/.workbuddy/skills/workbuddy-wallpaper" ./dist
 ```

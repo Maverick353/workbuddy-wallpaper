@@ -1,6 +1,6 @@
 <div align="center">
 
-# 壁纸 Skill · wallpaper-skill
+# workbuddy-wallpaper
 
 **把壁纸画进 WorkBuddy 窗口** —— 零依赖本地服务 + 注入式玻璃拟态界面
 
@@ -50,9 +50,9 @@
 
 ## 下载安装
 
-**方式一（推荐，不用 git）** —— 到 [**Releases**](https://github.com/Maverick353/workbuddy-wallpaper/releases/latest) 下载 `wallpaper-skill.zip`：
+**方式一（推荐，不用 git）** —— 到 [**Releases**](https://github.com/Maverick353/workbuddy-wallpaper/releases/latest) 下载 `workbuddy-wallpaper.zip`：
 
-1. 解压，把整个 **`wallpaper-skill` 文件夹**放进 `%USERPROFILE%\.workbuddy\skills\`
+1. 解压，把整个 **`workbuddy-wallpaper` 文件夹**放进 `%USERPROFILE%\.workbuddy\skills\`
 2. 在该目录下执行：
 
 ```bash
@@ -84,7 +84,7 @@ node scripts/stop-ui.js
 ### 装成 WorkBuddy 技能（可选）
 
 ```bash
-node scripts/install.js              # 复制到 ~/.workbuddy/skills/wallpaper-skill（可加 --no-autostart）
+node scripts/install.js              # 复制到 ~/.workbuddy/skills/workbuddy-wallpaper（可加 --no-autostart）
 node scripts/install.js --uninstall  # 停服务 + 撤销自启 + 删目录
 ```
 

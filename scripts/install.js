@@ -21,7 +21,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const SRC = path.resolve(__dirname, '..');
-const SKILL_NAME = 'wallpaper-skill';
+const SKILL_NAME = 'workbuddy-wallpaper';
 const SKILLS_DIR = path.join(os.homedir(), '.workbuddy', 'skills');
 const DEST = path.join(SKILLS_DIR, SKILL_NAME);
 const COMPANION = path.join(DEST, 'scripts', 'companion.js');
