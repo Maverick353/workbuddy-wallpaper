@@ -124,6 +124,15 @@ const CHROME_CSS = [
   //    实测来源：专家中心的 `._experts_<hash>` 卡、`._card_<hash>`、定时任务的 `.wb-card--outlined`、
   //    资料库的 `.wb-home-guide-*card-pc`。用 `wb-card` / `_card` / `_experts_` 通配一并覆盖。
   '[class*="wb-card"]:not(#wdw-noop),[class*="_card"]:not(#wdw-noop),[class*="_experts_"]:not(#wdw-noop),[class*="wb-home-guide"]:not(#wdw-noop),[class*="wbs-session-usage-popover"]:not(#wdw-noop),[class*="wbs-fork-tooltip"]:not(#wdw-noop){background-color:rgba(255,255,255,.06) !important;background-image:none !important;}',
+  // ⑨ 资料库（及同类列表页）里「矮条」型的深色块 —— 2026-10-14 用户截图指出表头还是黑的。
+  //    ⚠️ 这些都是**高度 28~36px 的横条**，我上一轮扫描写了「高度≥40px」的过滤条件把它们全滤掉了
+  //    （扫描更要注意：**别用尺寸阈值**，窄高/宽扁的条最容易漏）。逐类点名：
+  //      · 表格头 `thead`（.wb-feed-virtual-thead-pc = rgb(20,20,20) 928×36）
+  //      · 左栏分组头 .workspace-tree-section-header-pc、条目 .workspace-tree-space-node-pc、.memory-nav-item-pc
+  //      · 标签页 .doc-feed-tab-item-pc、类型按钮 .wb-home-type-btn-pc
+  'thead:not(#wdw-noop),[class*="wb-feed-virtual-thead"]:not(#wdw-noop),[class*="workspace-tree-section-header"]:not(#wdw-noop),[class*="workspace-tree-space-node"]:not(#wdw-noop),[class*="workspace-tree-item"]:not(#wdw-noop),[class*="memory-nav-item"]:not(#wdw-noop),[class*="doc-feed-tab-item"]:not(#wdw-noop),[class*="wb-home-type-btn"]:not(#wdw-noop){background-color:rgba(255,255,255,.07) !important;background-image:none !important;}',
+  // 选中态稍强一点，保留「当前项」的可辨识度
+  '[class*="memory-nav-item-active"]:not(#wdw-noop),[class*="doc-feed-tab-active"]:not(#wdw-noop){background-color:rgba(255,255,255,.14) !important;}',
   // 承载 tooltip/dropdown 的**按钮/触发器容器**被 daemon 的 theme-patches 误涂：
   //   `html[data-theme=dark] body[data-vscode-theme-name] [class*="tooltip"]:not(…):not(…)…{background:var(--wb-bg-popover) !important}`
   //   （以及同族的 [class*="dropdown"]/[class*="popover"]/[class*="popper"]…）——作者已为若干
