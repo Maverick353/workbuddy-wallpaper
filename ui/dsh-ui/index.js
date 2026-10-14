@@ -281,4 +281,4 @@ function dshUIExpression(opts) {
   ].join('\n');
 }
 
-module.exports = { STYLE_ID, artDataUri, dshUIExpression };
+module.exports = { STYLE_ID, artDataUri, dshUIExpression, CHROME_CSS };

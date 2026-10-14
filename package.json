@@ -31,6 +31,8 @@
     "test": "node scripts/verify.js",
     "companion": "node scripts/companion.js",
     "status": "node scripts/companion.js --status",
+    "doctor": "node scripts/doctor.js",
+    "resolve-node": "node scripts/resolve-node.js",
     "install-skill": "node scripts/install.js",
     "uninstall-skill": "node scripts/install.js --uninstall"
   },
