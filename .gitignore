@@ -6,3 +6,6 @@ dist/
 node_modules/
 .DS_Store
 Thumbs.db
+
+# 推广物料（不入代码库）
+推广文案-*.md
