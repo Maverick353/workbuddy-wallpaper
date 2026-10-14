@@ -143,6 +143,35 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     ok(lnk.readArguments(ansi) === '--x=1', '非 Unicode(ANSI) .lnk 也能写入');
   }
 
+  // ⚠️ 这一段的重点是**不抛异常**：WorkBuddy 托管的 Node 给 fs.rmSync 打了 safe-delete shim，
+  // 它会抛 "Error during a 'trash' operation" —— 曾导致真实安装流程中断。removeTree 就是为绕开它而写。
+  process.stdout.write('\n[8] 关键路径纯函数（安装/自毁防护/Node 解析）\n');
+  const installMod = require('./install.js');
+  const resolveNode = require('./resolve-node.js');
+
+  ok(installMod.sameOrNested('C:/a', 'C:/a') === true, 'sameOrNested：同一路径 → true');
+  ok(installMod.sameOrNested('C:/a', 'C:/a/b') === true, 'sameOrNested：源包含目标 → true');
+  ok(installMod.sameOrNested('C:/a/b', 'C:/a') === true, 'sameOrNested：目标包含源 → true（正是自毁场景）');
+  ok(installMod.sameOrNested('C:/a', 'C:/b') === false, 'sameOrNested：无关路径 → false');
+
+  {
+    const deep = path.join(dataDir, 'rmtree-probe', 'x', 'y');
+    fs.mkdirSync(deep, { recursive: true });
+    fs.writeFileSync(path.join(deep, 'a.txt'), 'a');
+    fs.writeFileSync(path.join(dataDir, 'rmtree-probe', 'b.txt'), 'b');
+    let threw = null;
+    try { installMod.removeTree(path.join(dataDir, 'rmtree-probe')); } catch (e) { threw = e; }
+    ok(threw === null, 'removeTree 不抛异常（safe-delete shim 回归）', threw ? threw.message : '');
+    ok(!fs.existsSync(path.join(dataDir, 'rmtree-probe')), 'removeTree 真的删干净了');
+  }
+
+  ok(resolveNode.majorOf('v22.22.2') === 22, 'majorOf 解析 v 前缀版本');
+  ok(resolveNode.majorOf('20.11.0') === 20, 'majorOf 解析无前缀版本');
+  ok(resolveNode.majorOf('') === 0, 'majorOf 对空串返回 0（不抛）');
+  const nodeOk = resolveNode.currentNodeOk(22);
+  ok(nodeOk.ok === true, '当前 Node 满足 ≥22（本项目硬性要求）', process.version);
+  ok(typeof resolveNode.resolveNode().exe === 'string', 'resolveNode 能解析出一个 node 路径');
+
   server.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
   process.stdout.write('\n通过 ' + pass + ' / 失败 ' + fail + '\n');

@@ -173,11 +173,18 @@ function uninstall() {
   log('完成。');
 }
 
-const args = process.argv.slice(2);
-if (args.includes('-h') || args.includes('--help')) {
-  console.log('用法: node scripts/install.js [--no-autostart | --uninstall | --status]');
-  process.exit(0);
+// 只有作为主模块运行时才执行命令分发 —— 这样测试可以直接 require 本文件拿纯函数，
+// 而不会因为 require 就触发一次真实安装（踩过：require 即安装）。
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  if (args.includes('-h') || args.includes('--help')) {
+    console.log('用法: node scripts/install.js [--no-autostart | --uninstall | --status]');
+    process.exit(0);
+  }
+  if (args.includes('--status')) { status(); process.exit(0); }
+  if (args.includes('--uninstall')) { uninstall(); process.exit(0); }
+  install({ noAutostart: args.includes('--no-autostart') });
 }
-if (args.includes('--status')) { status(); process.exit(0); }
-if (args.includes('--uninstall')) { uninstall(); process.exit(0); }
-install({ noAutostart: args.includes('--no-autostart') });
+
+// 导出纯函数供 scripts/verify.js 做回归测试
+module.exports = { sameOrNested, removeTree, keep, install, uninstall, status, SRC, DEST, SKILL_NAME };
