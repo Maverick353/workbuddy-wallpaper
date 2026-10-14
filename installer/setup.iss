@@ -46,8 +46,15 @@ WizardStyle=modern
 ; 未签名 → 不声明 signed；用户会看到 SmartScreen 提示（README / 下载页有说明）
 
 [Languages]
-Name: "chinese"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
+; ⚠️ Inno Setup 6 **不自带** ChineseSimplified.isl（中文向导是社区翻译，要单独下载放进
+;    <Inno 安装目录>\Languages\）。CI 上就因为这个文件不存在，第 49 行直接编译失败。
+;    所以这里做成「有就用、没有就只出英文向导」—— 缺一个翻译文件不该让整个打包崩掉。
+;    （想装中文向导：去 Inno Setup 官网的 Translations 页下载 ChineseSimplified.isl，
+;      放到 C:\Program Files (x86)\Inno Setup 6\Languages\ 即可，无需改本文件。）
+#if FileExists("C:\Program Files (x86)\Inno Setup 6\Languages\ChineseSimplified.isl")
+Name: "chinese"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+#endif
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; Flags: checkedonce
