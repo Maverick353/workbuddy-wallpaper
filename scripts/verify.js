@@ -87,6 +87,62 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   ok(/wallpaperBackground/.test(bge) && /wdw-theme-style/.test(bge), '背景注入表达式结构正确');
   ok(/__wdwLoadVideo|__wdwLoadToken/.test(bg.backgroundExpression({})) || /loadVideo/.test(bge), '视频加载走直链流式（带令牌）');
 
+  // 说明：这里用**合成**的 .lnk，不提交真实文件 —— 真实 .lnk 的 ExtraData 里带机器名，
+  // 属于不该进公开仓库的信息。合成结构覆盖了真正要紧的那几条格式契约。
+  process.stdout.write('\n[7] lnk 纯字节补丁（改写快捷方式参数）\n');
+  const lnk = require('./lnk.js');
+  const STR_ORDER = [['NAME', 0x04], ['WORKING_DIR', 0x10], ['ARGUMENTS', 0x20]];
+  const buildLnk = (opts) => {
+    const unicode = opts.unicode !== false;
+    const strs = [];
+    const add = (n, bit, v) => { if (v != null) strs.push({ n, bit, v }); };
+    add('NAME', 0x04, opts.name || 'Probe');
+    add('WORKING_DIR', 0x10, opts.workdir || 'C:\\probe');
+    add('ARGUMENTS', 0x20, opts.args);
+    let flags = 0x01 | 0x02 | (unicode ? 0x80 : 0);   // ⚠️ ANSI 模式必须清掉 IsUnicode(0x80)，
+                                                      // 否则解析端按 2 字节/字符读会越界（夹具坑，不是 lnk.js 的问题）
+    for (const s of strs) flags |= s.bit;
+    const idBody = Buffer.alloc(20, 0xAA);
+    const idList = Buffer.concat([(() => { const h = Buffer.alloc(2); h.writeUInt16LE(idBody.length, 0); return h; })(), idBody]);
+    const li = Buffer.alloc(40, 0xBB);
+    li.writeUInt32LE(40, 0);
+    const strings = Buffer.concat(strs.map((s) => {
+      const body = unicode ? Buffer.from(s.v, 'utf16le') : Buffer.from(s.v, 'latin1');
+      const h = Buffer.alloc(2);
+      h.writeUInt16LE(unicode ? body.length / 2 : body.length, 0);
+      return Buffer.concat([h, body]);
+    }));
+    const extra = Buffer.alloc(9, 0xCC);
+    extra.writeUInt32LE(9, 0);
+    const header = Buffer.alloc(76, 0);
+    header.writeUInt32LE(0x4C, 0);
+    header.writeUInt32LE(flags, 20);
+    return Buffer.concat([header, idList, li, strings, extra]);
+  };
+  const idListSizeAt = (b) => b.readUInt16LE(76);
+
+  {
+    const noArgs = buildLnk({});
+    const st = lnk.parse(noArgs);
+    ok(st.items.map((i) => i.name).join(',') === 'NAME,WORKING_DIR', '解析出 StringData 存在项', st.items.map((i) => i.name).join(','));
+    ok(lnk.readArguments(noArgs) === null, '无参 .lnk 读出 ARGUMENTS = null');
+
+    const withArg = lnk.setArguments(noArgs, '--remote-debugging-port=9222');
+    ok(lnk.readArguments(withArg) === '--remote-debugging-port=9222', '插入 ARGUMENTS 后可读回');
+    ok((lnk.parse(withArg).flags & 0x20) !== 0, '插入后 HasArguments(0x20) 置位');
+    ok(idListSizeAt(withArg) === idListSizeAt(noArgs), '★ IDList 长度字段未被改动（StringData 在它之后，无需回填）');
+    ok(withArg.length === noArgs.length + 2 + 28 * 2, '总长度 = 原长 + 2 字节计数 + 28 字符×2', withArg.length + ' vs ' + (noArgs.length + 58));
+    ok(lnk.parse(withArg).items.find((i) => i.name === 'NAME').value === 'Probe', '原有 NAME 未被破坏');
+    ok(lnk.parse(withArg).extraStart === lnk.parse(noArgs).extraStart + 58, 'ExtraData 起点随之后移（自身 size 字段无需回填）');
+
+    const replaced = lnk.setArguments(withArg, '--remote-debugging-port=9333');
+    ok(lnk.readArguments(replaced) === '--remote-debugging-port=9333', '已有 ARGUMENTS 时原位替换');
+    ok(replaced.length === withArg.length, '等长替换时总长度不变');
+
+    const ansi = lnk.setArguments(buildLnk({ unicode: false }), '--x=1');
+    ok(lnk.readArguments(ansi) === '--x=1', '非 Unicode(ANSI) .lnk 也能写入');
+  }
+
   server.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
   process.stdout.write('\n通过 ' + pass + ' / 失败 ' + fail + '\n');
