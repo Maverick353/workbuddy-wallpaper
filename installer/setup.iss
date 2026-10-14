@@ -15,7 +15,8 @@
 ;  设计取向：
 ;    · 装进 %LOCALAPPDATA%\Programs\...（**不需要管理员**，PrivilegesRequired=lowest）
 ;    · 装完在开始菜单放一个「workbuddy-wallpaper」项 → 指向 启动.cmd
-;    · postinstall 跑一次 install.cmd（它会自己找 Node、注册自启、检测调试端口）
+;    · postinstall 跑一次 install.cmd（自己找 Node、装成技能、注册自启、
+;      **并把看门狗在后台拉起来** —— 用户不用等下次登录，装完就能看到壁纸）
 ;    · 卸载走 uninstall.cmd（完整顺序：摘注入 → 停服务 → 停看门狗 → 撤自启 → 删目录 → 问数据目录）
 ; ============================================================================
 
@@ -70,13 +71,16 @@ Name: "{group}\卸载 {#MyAppName}"; Filename: "{app}\uninstall.cmd"; WorkingDir
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-; 装完立刻跑安装逻辑：找 Node → 装成技能 → 注册自启 → 检测调试端口 → 可选一键修快捷方式。
+; 装完立刻跑一次配置：找 Node → 装成技能 → 注册自启 → **后台拉起看门狗（隐藏窗口）**
+;   → 检测调试端口 → 没有就提出"帮你改快捷方式"。
 ; 用 nowait + 让控制台可见，用户能看懂发生了什么。
+;
+; 为什么没有第二个「现在就启动壁纸」勾选项：
+;   install.cmd 已经用 `companion.js --start-detached` 在后台把服务拉起来了，不需要用户再勾。
+;   而那个勾选项跑的是 启动.cmd（前景控制台），会和后台看门狗抢单实例锁 →
+;   结果只弹一个窗口写"已在运行"，纯属给用户添困惑。
 Filename: "{app}\install.cmd"; Description: "立刻完成配置（推荐）"; \
   Flags: postinstall nowait skipifsilent
-
-Filename: "{app}\{#MyAppExeName}"; Description: "现在就启动壁纸"; \
-  Flags: postinstall nowait skipifsilent unchecked
 
 [UninstallRun]
 ; 卸载前跑完整卸载顺序（摘注入 / 停服务 / 停看门狗 / 撤自启 / 删安装目录 / 问数据目录）

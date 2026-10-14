@@ -45,7 +45,7 @@
 ## 环境要求
 
 - **Windows**（依赖 `tasklist` / `taskkill` / `netstat`）
-- **Node.js ≥ 18**（零 npm 依赖，无需 `npm install`）
+- **Node.js ≥ 22**（零 npm 依赖，无需 `npm install`；18/20 上会出现「服务在跑但界面永远不上屏」这种最难查的状态）
 - **WorkBuddy 必须带调试端口 `--remote-debugging-port=9222` 启动** ← **这是最容易卡住的一关**
 
   > 没有这个参数，**注入不了**，装了什么都不会有反应。
@@ -70,7 +70,7 @@
 到 [**Releases**](https://github.com/Maverick353/workbuddy-wallpaper/releases/latest) 下载
 **`workbuddy-wallpaper-setup-1.1.0.exe`** → 双击 → 下一步 → 完成。
 
-装完会自动跑一次配置：找 Node → 装成技能 → 注册开机自启 → **检查调试端口** →
+装完会自动跑一次配置：找 Node → 装成技能 → 注册开机自启 → **并在后台把服务拉起来（隐藏窗口，不用等下次登录）** → **检查调试端口** →
 没有就提出「帮你改快捷方式」。无需管理员权限（装进 `%LOCALAPPDATA%\Programs\`）。
 
 > 未签名的包会触发 SmartScreen：点「**更多信息 → 仍要运行**」。这是没买代码签名证书的正常现象。

@@ -38,10 +38,17 @@ node scripts/companion.js --status
 ### 第 2 关：服务要有人启动（技能不会自己跑）
 
 ```bash
-node scripts/companion.js --install-autostart   # 注册开机自启 + 立刻拉起看门狗（推荐，一次搞定）
-# 或只想试一次：
+node scripts/companion.js --install-autostart   # 注册开机自启（只写启动项，**不会立刻拉起**）
+node scripts/companion.js --start-detached      # 真正在后台跑起来（隐藏窗口，关掉终端不影响）
+# 或只想试一次（前台跑，Ctrl+C 退出）：
 node scripts/start-ui.js
 ```
+
+> ⚠️ **`--install-autostart` 单独跑等于什么都没发生。** 它只往「启动」文件夹写一个 vbs，
+> 而启动文件夹里的东西**只在用户登录时执行**。所以只跑它会得到「装好了、重启 WorkBuddy 还是没反应」，
+> 得等到下次登录才生效 —— 这就是「装了没反应」最常见的成因。
+> 要立刻生效，必须在注册后再跑一次 `--start-detached`。
+> `install.cmd` / 「一键安装.cmd」/ .exe 安装包都已经按这个顺序做了，不用手动敲。
 
 过完这两关：**打开 WorkBuddy 壁纸自己出现，关掉自动停**。之后日常只需点窗口顶部的拉绳吉祥物开面板。
 
@@ -50,7 +57,7 @@ node scripts/start-ui.js
 | 需要 | 说明 |
 |---|---|
 | Windows | 看门狗/安装脚本依赖 Windows 命令 |
-| Node ≥ 18 | **零 npm 依赖**，无需 `npm install`；WorkBuddy 自带运行时即可 |
+| Node ≥ 22 | **零 npm 依赖**，无需 `npm install`；WorkBuddy 自带运行时即可。**低于 22 会出现「服务在跑但界面永远不上屏」**（`cdp.js` 依赖 Node 22 才有的全局 `WebSocket`），入口会直接报错退出 |
 | Wallpaper Engine | **可选**。只有要用创意工坊壁纸才需要；上传自定义图片/视频**不需要** |
 
 ## 快速开始
@@ -68,7 +75,8 @@ node scripts/stop-ui.js
 # 看门狗（随 WorkBuddy 启停本服务）
 node scripts/companion.js            # 常驻看门
 node scripts/companion.js --status   # 四行诊断（WorkBuddy / 服务 / 端口 / CDP）
-node scripts/companion.js --install-autostart    # 开机自启（登录时动态解析路径）
+node scripts/companion.js --start-detached       # 后台隐藏拉起（装完立刻生效，不用等登录）
+node scripts/companion.js --install-autostart    # 开机自启（登录时动态解析路径；不会立刻拉起）
 node scripts/companion.js --uninstall-autostart  # 取消自启
 node scripts/companion.js --stop-service         # 手动停服务
 node scripts/companion.js --stop-watchdog        # 停掉常驻看门狗

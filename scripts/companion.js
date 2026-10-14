@@ -344,6 +344,33 @@ function stopWatchdogCmd() {
   process.exit(0);
 }
 
+/**
+ * 立刻在后台拉起看门狗（隐藏窗口、独立进程），装完就能用，不用等下次登录。
+ *
+ * 为什么必须有这个：`--install-autostart` 只是**写一个 vbs 到启动文件夹**，
+ * 而启动文件夹里的东西**只在用户登录时执行**。于是会出现这个最难解释的状态：
+ * 用户装完 → 重启 WorkBuddy → **壁纸还是不出现**（因为看门狗压根没在跑），
+ * 得等到下次登录/开机才生效 —— 用户看到的就是"装了没反应"。
+ *
+ * 用 `windowsHide:true` 是为了不给 node.exe 开控制台窗口（Windows 上控制台程序默认会闪窗）。
+ * detached + unref 让子进程脱离本进程：install.cmd / 启动.cmd 的窗口关掉也不影响它。
+ * 已经在跑时，子进程会自己撞到单实例锁并安静退出（幂等）。
+ */
+function startDetachedCmd() {
+  const child = spawn(process.execPath, [SELF], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+    // ⚠️ 刻意**不传 cwd**：Windows 上删不掉「某个进程的当前目录」。
+    //    如果这里把 cwd 钉在安装目录，之后 install.js 覆盖安装时 removeTree(DEST)
+    //    就会删不动那个目录（实测把整洁安装挂在"清理旧目录"这一步、卡到超时）。
+    //    不传 cwd 时子进程继承调用者的工作目录，不会钉住任何安装目录。
+  });
+  child.unref();
+  process.stdout.write('[companion] 已在后台拉起看门狗（隐藏窗口）pid=' + child.pid + '\n');
+  process.exit(0);
+}
+
 function uninstallAutostartCmd() {
   const vbs = path.join(startupDir(), VBS_NAME);
   if (!fs.existsSync(vbs)) { log('--uninstall-autostart：开机启动项不存在（无需删除）: ' + vbs); process.exit(0); }
@@ -357,6 +384,7 @@ function usageCmd() {
     'companion.js · 壁纸服务看门\n' +
     '  node scripts/companion.js                     看门常驻（WorkBuddy 在→服务在）\n' +
     '  node scripts/companion.js --status            四行诊断（WorkBuddy/服务/端口/CDP）\n' +
+    '  node scripts/companion.js --start-detached    后台隐藏拉起（装完立刻生效，不用等登录）\n' +
     '  node scripts/companion.js --stop-service      手动停服务\n' +
     '  node scripts/companion.js --stop-watchdog     停掉常驻的看门狗\n' +
     '  node scripts/companion.js --install-autostart 开机自启（隐藏 vbs，登录时动态解析）\n' +
@@ -473,6 +501,7 @@ function main() {
   if (mode === '--stop-watchdog') return stopWatchdogCmd();
   if (mode === '--install-autostart') return installAutostartCmd();
   if (mode === '--uninstall-autostart') return uninstallAutostartCmd();
+  if (mode === '--start-detached') return startDetachedCmd();
   if (mode === '--help' || mode === '-h') return usageCmd();
   if (mode) { log('未知参数: ' + mode); return usageCmd(); }
 

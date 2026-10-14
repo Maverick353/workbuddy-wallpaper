@@ -110,6 +110,26 @@ function status() {
   return installed;
 }
 
+/**
+ * 覆盖安装前先停掉正在跑的看门狗与服务。
+ *
+ * ⚠️ 2026-10-14 实测踩坑：**正在跑的服务很可能就是从 DEST 启动的**（自启项指向 DEST 的
+ *   companion.js）。此时 removeTree(DEST) 会删到一半卡住（Windows 上「某个进程的当前目录」
+ *   和"正在被使用的文件"都删不掉）—— 表现为整洁安装挂在「目标已存在 → 先清理」这一步，
+ *   进程被卡到超时被杀（exit 143），用户看到的是"重装失败"。
+ *   所以：**替换代码之前必须先把旧代码停掉**，装完再拉起来。
+ *   全部 best-effort —— 没在跑时这些命令会自己安静退出，不会让安装失败。
+ */
+function stopRunning() {
+  if (!fs.existsSync(COMPANION)) return;
+  for (const flag of ['--stop-watchdog', '--stop-service']) {
+    log('覆盖安装前先停掉正在运行的实例：' + flag);
+    try {
+      spawnSync(process.execPath, [COMPANION, flag], { stdio: 'ignore', windowsHide: true, timeout: 20000 });
+    } catch (_) { /* 停不掉不阻塞安装，下面的删除会给出结果 */ }
+  }
+}
+
 function install(opts) {
   if (!fs.existsSync(SKILLS_DIR)) fs.mkdirSync(SKILLS_DIR, { recursive: true });
 
@@ -121,20 +141,32 @@ function install(opts) {
     log('检测到本脚本运行在安装目录内（源 = 目标）→ 跳过复制，避免自毁。');
     log('  你看到的这份就是已安装的副本；如需重新安装，请到项目源码目录再执行。');
   } else {
-    if (fs.existsSync(DEST)) { log('目标已存在 → 先清理（幂等）'); removeTree(DEST); }
+    if (fs.existsSync(DEST)) {
+      log('目标已存在 → 先停掉旧实例，再清理（幂等）');
+      stopRunning();
+      removeTree(DEST);
+    }
     fs.mkdirSync(DEST, { recursive: true });
     fs.cpSync(SRC, DEST, { recursive: true, filter: keep });
     log('已复制到:', DEST);
   }
 
-  if (opts.noAutostart) { log('已跳过开机自启（--no-autostart）'); }
-  else if (fs.existsSync(COMPANION)) {
+  if (opts.noAutostart) {
+    log('已跳过开机自启与后台启动（--no-autostart）');
+  } else if (fs.existsSync(COMPANION)) {
     log('注册开机自启…');
     const r = spawnSync(process.execPath, [COMPANION, '--install-autostart'], { stdio: 'inherit' });
     if (r.status !== 0) log('（开机自启注册未成功，可稍后手动执行 companion.js --install-autostart）');
+    // 立刻在后台跑起来。只写自启项是不够的 —— 启动文件夹里的 vbs **只在登录时执行**，
+    // 用户装完重启 WorkBuddy 也看不到壁纸，得等到下次登录，表现就是"装了没反应"。
+    // 从 DEST（刚装好的这份）启动，与自启项指向的是同一份代码。
+    log('在后台拉起看门狗（隐藏窗口，不用等下次登录）…');
+    const r2 = spawnSync(process.execPath, [COMPANION, '--start-detached'], { stdio: 'inherit' });
+    if (r2.status !== 0) log('（后台启动未成功，可稍后手动执行 companion.js --start-detached）');
   }
-  log('完成。启动：node "' + path.join(DEST, 'scripts', 'start-ui.js') + '"');
-  log('或让看门狗常驻：node "' + COMPANION + '"');
+  log('完成。');
+  log('  服务已在后台运行；停止：面板 → 关于 → 关闭壁纸');
+  log('  手动启动：node "' + path.join(DEST, 'scripts', 'start-ui.js') + '"');
 }
 
 function uninstall() {

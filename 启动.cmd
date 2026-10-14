@@ -27,18 +27,32 @@ if /i "%AUTO%"=="n" goto :mark_asked
 >"%APPDATA%\workbuddy-wallpaper\.asked-autostart" echo asked
 
 :launch
+rem Already up? Then say so instead of printing "Starting" and popping a console.
+netstat -ano | findstr "127.0.0.1:47851" | findstr LISTENING >nul 2>nul
+if not errorlevel 1 goto :already_up
+
 echo.
 echo   ---------------------------------------------------------------
-echo   Starting. MINIMIZE this window - do not close it; closing it
-echo   stops the service.
+echo   Starting in the background (hidden window, nothing to keep open).
 echo   Panel : click the rope mascot at the top of the WorkBuddy window
-echo   Stop  : panel - About - Close wallpaper, or close this window
+echo   Stop  : panel - About - Close wallpaper
 echo   ---------------------------------------------------------------
 echo.
 
-"%NODE_EXE%" "%~dp0scripts\companion.js"
+"%NODE_EXE%" "%~dp0scripts\companion.js" --start-detached
 echo.
-echo   Service stopped.
+echo   If the wallpaper does not show up: WorkBuddy is probably not running with
+echo   the debug port. Check with  node scripts\companion.js --status
+echo   line 4 should read  CDP 9222: LISTENING
+goto :launch_end
+
+:already_up
+echo.
+echo   Already running (port 47851 is listening) - nothing to do.
+echo   Panel : click the rope mascot at the top of the WorkBuddy window
+echo   Stop  : panel - About - Close wallpaper
+:launch_end
+echo.
 pause
 exit /b 0
 
