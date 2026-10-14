@@ -50,15 +50,21 @@
 
 ## 下载安装
 
+> ⚠️ **下载下来不会自己跑。** 解压只是把文件放到硬盘上，**必须执行一次安装命令**，
+> 之后它才会开机自启、并在 WorkBuddy 启动时自动跟上。
+
 **方式一（推荐，不用 git）** —— 到 [**Releases**](https://github.com/Maverick353/workbuddy-wallpaper/releases/latest) 下载 `workbuddy-wallpaper.zip`：
 
 1. 解压，把整个 **`workbuddy-wallpaper` 文件夹**放进 `%USERPROFILE%\.workbuddy\skills\`
-2. 在该目录下执行：
+2. 在该目录下执行这两条（**第 1 条是关键**：注册开机自启，之后就不用再手动启动了）：
 
 ```bash
-node scripts/companion.js --install-autostart   # 开机自启（可选）
-node scripts/start-ui.js                        # 立即启动
+node scripts/companion.js --install-autostart   # 注册开机自启 + 立刻拉起看门狗
 ```
+
+3. 完成。之后**打开 WorkBuddy 壁纸就会自己出现**，关掉 WorkBuddy 它自动停。
+
+> 只想试一次、不想常驻？那就跳过第 2 步，直接 `node scripts/start-ui.js`（Ctrl+C 退出）。
 
 **方式二（用 git）**
 
@@ -98,6 +104,16 @@ node scripts/companion.js --stop-service         # 手动停服务
 ```
 
 打开 WorkBuddy 时自动拉起服务，关掉 WorkBuddy 时自动停服务。
+
+### 日常怎么用（装好之后）
+
+| 想干什么 | 怎么做 |
+| --- | --- |
+| **打开面板** | 点窗口顶部那只**拉绳吉祥物**（挂在边上的猫），点一下面板就出来 |
+| **换壁纸 / 调字体** | 面板里 5 个页签：壁纸库 · 字体 · 系统 · 扩展 · 关于 |
+| **临时关掉壁纸** | 面板 → **关于** → 「关闭壁纸」；或 `node scripts/stop-ui.js` |
+| **彻底卸载** | `node scripts/install.js --uninstall`（停服务 + 撤销自启 + 删目录） |
+| **排查问题** | `node scripts/companion.js --status`（四行诊断：WorkBuddy / 服务 / 端口 / CDP） |
 
 ## 面板：5 个页签
 
