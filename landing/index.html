@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>workbuddy-wallpaper · 把壁纸画进 WorkBuddy 窗口</title>
+<style>
+  :root{
+    --bg:#0c0d11; --card:#14161c; --line:rgba(255,255,255,.10);
+    --ink:#eef1f7; --ink2:#a3abbd; --ink3:#6d7688;
+    --acc:#4f8cff; --ok:#3fb950;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.75 -apple-system,"Microsoft YaHei","PingFang SC",system-ui,sans-serif;}
+  .wrap{max-width:760px;margin:0 auto;padding:56px 22px 80px}
+  h1{font-size:34px;line-height:1.3;margin:0 0 10px;letter-spacing:.2px}
+  .sub{color:var(--ink2);font-size:17px;margin:0 0 34px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 24px;margin:0 0 18px}
+  h2{font-size:19px;margin:0 0 14px}
+  .btn{display:inline-block;background:var(--acc);color:#fff;text-decoration:none;
+    padding:13px 26px;border-radius:11px;font-weight:600;font-size:16px}
+  .btn:hover{filter:brightness(1.1)}
+  .btn2{background:transparent;border:1px solid var(--line);color:var(--ink);margin-left:10px}
+  .meta{color:var(--ink3);font-size:13px;margin-top:12px}
+  ol,ul{margin:0;padding-left:22px;color:var(--ink2)}
+  li{margin:7px 0}
+  code{background:rgba(255,255,255,.07);padding:2px 7px;border-radius:6px;font-size:14px;
+    font-family:Consolas,monospace;color:var(--ink)}
+  .warn{border-color:rgba(240,180,60,.35);background:rgba(240,180,60,.06)}
+  .ok{color:var(--ok)}
+  details{border-top:1px solid var(--line);padding:13px 0}
+  details:first-of-type{border-top:0}
+  summary{cursor:pointer;font-weight:600;color:var(--ink)}
+  details p{color:var(--ink2);margin:9px 0 0}
+  footer{color:var(--ink3);font-size:13px;text-align:center;margin-top:40px;line-height:2}
+  a{color:var(--acc)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>把壁纸画进 WorkBuddy 窗口</h1>
+  <p class="sub">零依赖本地服务 + 注入式玻璃拟态界面。壁纸整片透出、界面上一条黑线都没有。</p>
+
+  <div class="card">
+    <h2>下载</h2>
+    <a class="btn" href="https://github.com/Maverick353/workbuddy-wallpaper/releases/latest">下载最新版（GitHub）</a>
+    <a class="btn btn2" href="https://github.com/Maverick353/workbuddy-wallpaper">看源代码</a>
+    <p class="meta">压缩包约 2.6 MB · 开源 AGPL-3.0 · 仅支持 Windows · <strong>不需要预先安装 Node</strong></p>
+  </div>
+
+  <div class="card">
+    <h2>安装（三步）</h2>
+    <ol>
+      <li>下载并<strong>解压</strong>压缩包</li>
+      <li>双击里面的 <code>install.cmd</code>（中文名 <code>一键安装.cmd</code>）</li>
+      <li>按提示走完 —— 它会自己找 Node、装好、注册开机自启，并检查一个关键开关</li>
+    </ol>
+    <p class="meta">之后打开 WorkBuddy，壁纸就会自己出现。想临时用一下不装进系统？双击 <code>启动.cmd</code> 即可。</p>
+  </div>
+
+  <div class="card warn">
+    <h2>⚠️ 最容易卡住的一步：调试端口</h2>
+    <p>本工具是"注入"进 WorkBuddy 界面的，所以 <strong>WorkBuddy 必须带调试端口启动</strong>，
+    否则会出现<strong>「装了但什么都没发生」</strong>——服务在跑、日志正常、屏幕上却没动静。</p>
+    <p>好消息：<code>install.cmd</code> 会<strong>自动检测这一点</strong>，没开就直接问你"要不要我帮你改快捷方式"。
+    改的是快捷方式文件本身（改前自动备份），<strong>不会去动任何正在运行的程序</strong>。</p>
+    <p>改完要<strong>完全退出 WorkBuddy（托盘图标也退掉）再用那个快捷方式打开</strong> ——
+    它是单实例应用，已经在跑的时候再点快捷方式，新参数会被忽略。</p>
+  </div>
+
+  <div class="card">
+    <h2>常见问题</h2>
+    <details>
+      <summary>Windows 弹出"已保护你的电脑"，怎么办？</summary>
+      <p>因为安装包没有购买代码签名证书（个人开源项目负担不起）。点<strong>「更多信息」→「仍要运行」</strong>即可。
+      如果下载的 <code>.cmd</code> 双击没反应，右键 → 属性 → 勾选底部的<strong>「解除锁定」</strong>。</p>
+    </details>
+    <details>
+      <summary>提示找不到 Node？</summary>
+      <p>脚本会优先用 <strong>WorkBuddy 自带的 Node</strong>（≥22），找不到才回退系统 PATH。
+      如果两条路都没有：先<strong>打开一次 WorkBuddy</strong> 让它准备好内置运行时，再重跑一次安装脚本。
+      Node 必须 <strong>≥ 22</strong> —— 低版本的表现很隐蔽：服务正常，但界面永远不出来。</p>
+    </details>
+    <details>
+      <summary>装了却没反应，怎么排查？</summary>
+      <p>在解压目录执行 <code>node scripts\companion.js --status</code>，它会输出四行诊断。
+      第 4 行 <code>CDP 9222</code> 如果是「未监听」，就是上面那个调试端口的问题 ——
+      按它的提示走即可（也可以直接跑 <code>node scripts\fix-shortcut.js</code> 自动修）。</p>
+    </details>
+    <details>
+      <summary>怎么卸载？</summary>
+      <p>双击 <code>uninstall.cmd</code>（或 <code>一键卸载.cmd</code>）。它会依次：
+      优雅摘掉页面注入 → 停服务 → 停看门狗 → 撤销开机自启 → 删安装目录 →
+      然后<strong>问你要不要连数据目录一起删</strong>（里面有你自己上传的壁纸，默认保留）。</p>
+    </details>
+    <details>
+      <summary>安全吗？它会改我系统里什么？</summary>
+      <p>它<strong>不修改 WorkBuddy 安装目录</strong>。会碰的东西只有三处，且都可撤销：
+      ① 你自己目录下的技能文件夹；② 开机启动项（一个 vbs，卸载时删除）；
+      ③ 只有在你同意时才改 WorkBuddy 快捷方式（加调试参数，改前备份）。</p>
+    </details>
+    <details>
+      <summary>WorkBuddy 升级后壁纸突然没了？</summary>
+      <p>常见两种原因：① 升级重启丢了调试端口参数 —— 用改过的快捷方式重开即可；
+      ② 界面类名变了，导致透明化规则失效。跑 <code>node scripts\doctor.js</code> 能列出哪些锚点失效了。</p>
+    </details>
+  </div>
+
+  <footer>
+    开源项目 · AGPL-3.0-or-later ·
+    <a href="https://github.com/Maverick353/workbuddy-wallpaper">GitHub</a><br>
+    演示用的壁纸均来自 Wallpaper Engine 创意工坊，非本项目作品。
+  </footer>
+
+</div>
+</body>
+</html>

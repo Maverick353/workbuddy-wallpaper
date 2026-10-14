@@ -60,6 +60,8 @@
 
 > ⚠️ **下载下来不会自己跑。** 需要**双击一次**安装脚本（或跑 .exe 安装包），之后才是自动的。
 >
+> 🌐 **不想看 GitHub？** 有中文图文下载页：**https://workbuddy-wallpaper.app.workbuddy.host/**
+>
 > ✅ **不需要你预先装 Node** —— 脚本会先去找 WorkBuddy 自带的运行时
 > （`CODEBUDDY_NODE_BIN` → 内置版本目录），找不到才回退到系统 PATH。需要的是 **Node ≥ 22**。
 
