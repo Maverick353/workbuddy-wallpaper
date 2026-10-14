@@ -14,7 +14,11 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        node: [20, 22]
+        # ⚠️ 只跑项目**实际支持**的版本：本项目要求 Node >= 22
+        # （scripts/cdp.js 用了 Node 22 才有的全局 WebSocket）。
+        # 之前矩阵里带 node 20 会直接在入口的版本自检处 exit(1) —— 那是守卫正常工作，
+        # 不是 bug；真正要改的是别再声称支持 20。
+        node: [22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
