@@ -1,9 +1,16 @@
 # 统一换行符为 LF（项目源码在 Windows 上编辑，避免 CRLF 反复抖动）
 * text=auto eol=lf
 
+# ⚠️ 批处理必须 CRLF —— cmd.exe 解析 .cmd/.bat 时对行尾敏感，
+#    纯 LF 会让 `rem` 失效、把注释里的字当命令执行（实测报"命令语法不正确"）。
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
 # 二进制资源不做换行转换
 *.png binary
 *.webp binary
 *.jpg binary
 *.gif binary
 *.mp4 binary
+*.ico binary
+*.exe binary
