@@ -55,6 +55,22 @@ jobs:
       - name: 安装 Inno Setup 6
         run: choco install innosetup --no-progress -y
 
+      - name: 取中文向导语言包（有则中文安装界面，取不到自动退回英文）
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          # Inno Setup 6 不自带中文向导；官方仓库 issrc 里放着一份。
+          # continue-on-error：这一步失败不该让打包整个挂掉（setup.iss 里是条件加载，缺了就英文向导）。
+          $dir = "${env:ProgramFiles(x86)}\Inno Setup 6\Languages"
+          $url = 'https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/ChineseSimplified.isl'
+          try {
+            Invoke-WebRequest -Uri $url -OutFile "$dir\ChineseSimplified.isl" -UseBasicParsing
+            Write-Host "已取到中文语言包: $((Get-Item "$dir\ChineseSimplified.isl").Length) bytes"
+          } catch {
+            Write-Warning "取中文语言包失败（将使用英文向导）: $($_.Exception.Message)"
+            exit 0
+          }
+
       - name: 编译 .exe 安装包（同时验证 setup.iss 可编译）
         shell: pwsh
         run: |
