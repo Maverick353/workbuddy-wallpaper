@@ -472,6 +472,34 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     upd.removeTree(lk);
   }
 
+  // ── P0-2 / P0-4 回归钉：静态站放不下压缩包后缀（WAF 拦截）──────────────────
+  //    实测（2026-10-17）：该静态站前置 WAF 按 URL 后缀拦截 .zip/.gz/.tar/.7z/.rar，
+  //    一律 403「WAF拦截页面」，**与文件是否存在无关**。
+  //    v1.2.0 把更新包镜像成 .zip 放在那儿 → 用户点「立即更新」拿到的是 WAF 的 HTML。
+  //    这几条直接检查**产物**，因为当初的错就是产物错。
+  {
+    const lv = JSON.parse(readT('landing/version.json'));
+    const blocked = /\.(zip|gz|tgz|tar|7z|rar|bz2|xz)$/i;
+    ok(!!lv.assets && !!lv.assets.zip, 'landing/version.json 有 assets.zip 段');
+    ok(!blocked.test(lv.assets.zip.url),
+      '★ feed 的**主源**地址不是压缩包后缀（静态站会 403），实为 ' + lv.assets.zip.url.split('/').pop());
+    ok((lv.assets.zip.mirrors || []).every((u) => /^https:\/\//.test(u)),
+      'feed 的兜底源都是 https');
+    ok(fs.existsSync(path.join(ROOT, 'landing', path.basename(lv.assets.zip.url))),
+      '主源指向的那个镜像文件确实在 landing/ 里（否则部署后就是 404）');
+    ok(Number(lv.assets.zip.size) > 0 && /^[0-9a-f]{64}$/.test(String(lv.assets.zip.sha256)),
+      'feed 里带了 size 与 64 位 sha256');
+
+    const rf = readT('scripts/release-feed.js');
+    ok(/MIRROR_NAME/.test(rf) && /test\(MIRROR_NAME\)/.test(rf),
+      '结构钉：发版脚本里有"镜像名不得是压缩包后缀"的守卫');
+    ok(fs.existsSync(path.join(ROOT, 'scripts', 'verify-live.js')),
+      '线上守门脚本 scripts/verify-live.js 存在（发布后必须跑）');
+    const vl = readT('scripts/verify-live.js');
+    ok(/process\.exit\(fail \? 1 : 0\)/.test(vl),
+      '结构钉：verify-live 以非 0 退出表示"发布失败"（闸门要有牙齿）');
+  }
+
   server.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
   process.stdout.write('\n通过 ' + pass + ' / 失败 ' + fail + '\n');

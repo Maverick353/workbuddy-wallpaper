@@ -91,6 +91,18 @@ if (!fs.existsSync(zipPath)) {
   process.exit(1);
 }
 
+// ── 静态站上的镜像文件名：**绝不能是压缩包后缀** ─────────────────────────────
+// 实测（2026-10-17）：静态站前置 WAF 按 URL 后缀拦截压缩包类扩展名
+// （.zip / .gz / .tar / .7z / .rar 一律 403「WAF拦截页面」，**与文件是否存在无关**）。
+// 客户端本就不看扩展名（下载写 .part 再 rename），所以换个后缀即可 —— 但这条必须机器守住，
+// 否则哪天改回去，线上会出现"feed 能读、包下不动"的静默故障。
+// GitHub Release 那边仍用 .zip（那边不拦），两个源是**同一份字节**。
+const MIRROR_NAME = 'workbuddy-wallpaper-' + version + '.bin';
+if (/\.(zip|gz|tgz|tar|7z|rar|bz2|xz)$/i.test(MIRROR_NAME)) {
+  console.error('镜像文件名不能以压缩包后缀结尾（会被静态站 WAF 拦掉）：' + MIRROR_NAME);
+  process.exit(1);
+}
+
 // ── ① 校验：包里的 package.json 版本必须等于要发布的版本（防串包）───────────
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-feed-'));
 let innerVersion = null;
@@ -134,9 +146,10 @@ const feed = {
   assets: {
     zip: {
       // 主源 = 自建静态站（国内可直连）；GitHub Release 作镜像兜底。
-      // ⚠️ 两个源必须是**同一份字节**：镜像就是这份 zip 原样拷进 landing/ 的，
+      // ⚠️ 两个源必须是**同一份字节**：镜像就是这份 zip 原样拷进 landing/ 的（只换文件名），
       //    所以 sha256 对两边都成立（本地重打的包不保证字节相同，见文件头说明）。
-      url: noMirror ? ghUrl : siteBase + '/' + ZIP_NAME,
+      // ⚠️ 静态站那份**不能叫 .zip**：改名前实测该域名对压缩包后缀一律 403（WAF 拦截页）。
+      url: noMirror ? ghUrl : siteBase + '/' + MIRROR_NAME,
       mirrors: noMirror ? [] : [ghUrl],
       size: size,
       sha256: sha256,
@@ -162,10 +175,11 @@ fs.writeFileSync(feedPath, JSON.stringify(feed, null, 2) + '\n');
 console.log('\n已写 ' + path.relative(ROOT, feedPath));
 
 if (!noMirror) {
-  const dest = path.join(landingDir, ZIP_NAME);
+  const dest = path.join(landingDir, MIRROR_NAME);
   fs.copyFileSync(zipPath, dest);
   console.log('已镜像更新包 → ' + path.relative(ROOT, dest) + '（与 feed 里 sha256 对应的就是这份字节）');
 }
 if (fetched) update.removeTree(fetched);
-console.log('\n下一步：部署 landing/ 到静态站（发布与部署分开跑），然后核对 ' +
-  siteBase + '/version.json 可访问、且 ' + siteBase + '/' + ZIP_NAME + ' 的 sha256 与上面一致。');
+console.log('\n下一步：部署 landing/ 到静态站（发布与部署分开跑），然后**必须**跑一次线上守门：');
+console.log('  node scripts/verify-live.js        # 核对 feed 可读、包可下、sha256 逐字节一致');
+console.log('  只在 ' + siteBase + '/version.json 与 ' + siteBase + '/' + MIRROR_NAME + ' 都验过之后，才算发布完成。');

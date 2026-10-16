@@ -1,3 +1,5 @@
 # 更新包镜像：由 scripts/release-feed.js 复制进来，供部署到静态站（国内可直连）。
 # 只部署用，不入 git（2.6MB 二进制，且每次发版都会变）。
 *.zip
+*.bin
+waf-probe
