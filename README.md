@@ -68,7 +68,7 @@
 ### 方式一：`.exe` 安装包（最省事，推荐给不写代码的人）
 
 到 [**Releases**](https://github.com/Maverick353/workbuddy-wallpaper/releases/latest) 下载
-**`workbuddy-wallpaper-setup-1.1.3.exe`** → 双击 → 下一步 → 完成。
+**`workbuddy-wallpaper-setup-1.2.0.exe`** → 双击 → 下一步 → 完成。
 
 装完会自动跑一次配置：找 Node → 装成技能 → 注册开机自启 → **并在后台把服务拉起来（隐藏窗口，不用等下次登录）** → **检查调试端口** →
 没有就提出「帮你改快捷方式」。无需管理员权限（装进 `%LOCALAPPDATA%\Programs\`）。
@@ -144,22 +144,99 @@ node scripts/companion.js --stop-service         # 手动停服务
 | **字体** | 文字颜色（调色盘 + 常用色块 + 纯白/纯黑/默认）、本机字体搜索与预览 |
 | **系统** | 吉祥物（拉绳 Buddy）说明 |
 | **扩展** | 数据位置、与宿主的共存说明 |
-| **关于** | 版本 / 许可 / 接口地址 / 关闭壁纸 |
+| **关于** | 版本 / 更新（检查·一键更新·回滚）/ 许可 / 接口地址 / 关闭壁纸 |
+
+## 更新（自动检查 + 一键更新）
+
+**不需要你盯 Releases。** 检测到新版本会在面板「关于」页挂提示，点一下就能更新到最新。
+
+### 什么时候检查
+
+静态站只能轮询、没有真推送，所以用四条触发时机叠出「准推送」效果：
+
+| 时机 | 说明 |
+| --- | --- |
+| **服务启动后 25 秒** | 先把服务、注入、壁纸都跑完再查，绝不抢启动路径 |
+| **运行中每 6 小时** | 服务常驻期间自动重查 |
+| **打开面板时** | 只读缓存（不发网络），缓存超 1 小时才后台补一次真检查 —— 所以打开面板永远不会卡 |
+| **手动** | 「关于」页 → **检查更新** |
+
+### 你会看到什么
+
+- 「关于」页签上出现**小红点** + 更新卡片（当前版本 → 最新版本 + 更新说明）
+- 日志里一行：`发现新版本 v1.x.x（当前 v1.y.y）→ 面板「关于」页可一键更新`
+
+### 点「立即更新」之后
+
+```
+下载 → 校验 sha256 → 解压到暂存区 → 冒烟校验包内版本 → 整包备份当前版本 → 覆盖 → 服务重启
+```
+
+- **下载源自动兜底**：主源是自建静态站（国内可直连），失败自动换 GitHub Releases
+- **sha256 / 大小不符直接拒绝**，且**不动任何已安装文件**（实测验证过）
+- **包内版本 ≠ 目标版本也拒绝**（防止 feed 写错或包被换）
+- 更新前会把当前版本**整包备份**到 `<数据目录>\versions\<旧版本>\`，默认保留最近 3 份
+- 覆盖后如果版本校验失败，**自动回滚**
+- 服务重启靠看门狗（约 5 秒）；如果你的服务是手动起的、没有看门狗，会先自己补一个再退出
+
+### 出问题怎么办
+
+| 情况 | 行为 |
+| --- | --- |
+| 更新源全部不可达 | **不报错、不阻塞**，保留上次结论；「关于」页显示上次成功时间 + 失败原因 |
+| 更新失败 | 自动回滚到原版本，错误原因显示在面板上 |
+| 更新后不合适 | 「关于」页 → **回滚到 vX.Y.Z**（用本地备份，不联网） |
+| 当前版本低于 feed 的 `minSupported` | 面板红色提示「必须更新」（低于它接口契约不兼容），并**禁止回滚到更低版本** |
+| 本地版本比 feed 新（自己改过代码） | 不提示更新，也不会「降级」 |
+
+### 配置
+
+优先级（低 → 高）：
+
+1. `update.json`（随包分发，就是上面的默认值）
+2. `<数据目录>\update.json`（**你的覆盖，升级不丢**）
+3. 环境变量 `WBWP_UPDATE_FEED`（逗号分隔的 URL 列表）、`WBWP_UPDATE_OFF=1`（**整体关闭更新检查**）
+
+```json
+{
+  "feeds": [
+    "https://workbuddy-wallpaper.app.workbuddy.host/version.json",
+    "https://raw.githubusercontent.com/Maverick353/workbuddy-wallpaper/main/landing/version.json"
+  ],
+  "channel": "stable",
+  "startupDelaySeconds": 25,
+  "checkIntervalHours": 6,
+  "keepBackups": 3
+}
+```
+
+feed 就是一个静态 JSON：`latest` / `minSupported` / `notes` / `assets.zip{url, mirrors, size, sha256}`。
+发版时由 `node scripts/release-feed.js` 生成（它同时把更新包镜像进 `landing/`，供静态站托管）。
 
 ## 数据目录
 
 `%APPDATA%\workbuddy-wallpaper` —— 主题、自定义壁纸、工坊缓存、字体缓存、
 `.ui.pid`、`.companion.lock`、`companion.log`（超 1MB 自动轮转）。
 
+更新机制相关的：
+
+| 路径 | 内容 |
+| --- | --- |
+| `update.json` | 你的更新配置覆盖（可选，升级不丢） |
+| `update-cache.json` | 上次检查结论 + ETag + 失败原因 |
+| `versions/<版本>/` | 更新前的整包备份（回滚用，默认留最近 3 份） |
+| `update/download`、`update/staging` | 下载与解压暂存（可随时删） |
+
 ## 项目结构
 
 ```
-scripts/     入口：start-ui / stop-ui / companion / cdp / verify / install / server
-core/        内核：store（数据）· media（媒体）· we（工坊扫描）· theme-css（背景 CSS）· fonts（字体枚举）· renderer
+scripts/     入口：start-ui / stop-ui / companion / cdp / verify / install / server / release-feed
+core/        内核：store（数据）· media（媒体）· we（工坊扫描）· theme-css（背景 CSS）· fonts（字体枚举）· update（版本检测与更新）· renderer
 server/      HTTP 路由与独立启动器
 ui/          注入页面：background.js（背景层）· dsh-ui/（吉祥物 + 面板 + 立绘）
 renderer/    vendored 场景渲染器（WebWallGL，MIT）
 assets/      内置种子壁纸
+landing/     静态下载页（同时托管 version.json 与更新包镜像）
 ```
 
 ## HTTP API（节选）
@@ -170,6 +247,10 @@ POST /api/custom-wallpapers     DELETE /api/custom-wallpapers
 GET  /api/we-wallpapers         POST /api/we-apply
 POST /api/theme-bg              GET/POST /api/mask
 GET  /api/fonts                 （本机字体列表，?refresh=1 强制重扫）
+GET  /api/update                （读缓存的更新状态，不发网络）
+POST /api/update/check          （真的去拉 feed；{force} 忽略节流）
+POST /api/update/apply          （下载→校验→备份→覆盖→重启；{expectVersion} 防抢跑）
+POST /api/update/rollback       （从本地备份回滚；{version} 不传则回最近一份）
 静态  /wallpapers/* · /theme-media/* · /wallpaper-engine/scene-live/* · /wallpaper-engine/scene-files/*
 ```
 

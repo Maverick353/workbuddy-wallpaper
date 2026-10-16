@@ -8,6 +8,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const zlib = require('zlib');
 
 const ROOT = path.resolve(__dirname, '..');
 const { start } = require(path.join(ROOT, 'server', 'standalone.js'));
@@ -182,7 +183,11 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   ok(/^\d+\.\d+\.\d+$/.test(pkgVer), 'package.json 版本号格式合法', 'v' + pkgVer);
   ok(readT('core/index.js').includes("PLUGIN_VERSION = '" + pkgVer + "'"), 'core/index.js 的 PLUGIN_VERSION 与 package.json 一致');
   ok(readT('installer/setup.iss').includes('#define MyAppVersion "' + pkgVer + '"'), 'setup.iss 的 MyAppVersion 一致（决定 .exe 文件名）');
-  ok(readT('ui/dsh-ui/panel.js').includes('v' + pkgVer), '面板「关于」页显示的版本一致');
+  // 面板「关于」页的版本显示：允许带或不带前导 v（页面里用的是变量兜底 + 'v' 前缀拼接），
+  // 但**必须**出现这个版本号的字面量 —— 否则就是漏改了。
+  const panelSrcForVer = readT('ui/dsh-ui/panel.js');
+  ok(panelSrcForVer.includes('v' + pkgVer) || panelSrcForVer.includes("'" + pkgVer + "'") || panelSrcForVer.includes('"' + pkgVer + '"'),
+    '面板「关于」页显示的版本一致');
   ok(readT('README.md').includes('workbuddy-wallpaper-setup-' + pkgVer + '.exe'), 'README 里的安装包文件名一致');
   ok(readT('SKILL.md').includes('version: ' + pkgVer), 'SKILL.md 的 version 一致');
   ok(readT('STORE.md').includes('`' + pkgVer + '`'), 'STORE.md 的版本一致');
@@ -225,6 +230,161 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   ok(!/#root\{background/.test(sceneCss), '没有低特异性的裸 `#root{background` 残留（那会输给同优先级规则）');
   ok(sceneCss.indexOf('html:not(#wdw-noop),body:not(#wdw-noop)') >= 0, 'html/body 也一并抬了特异性');
   ok(String(dshUI.CHROME_CSS).indexOf('#root:not(#wdw-noop){background-image:none') >= 0, 'dsh-ui 的 #root 兜底规则同样抬了特异性');
+
+  // ── [12] 更新机制（离线部分）────────────────────────────────────────────
+  // 联网部分（真去拉 feed / 真下载）不放进 CI：CI 里没有稳定的外部源，
+  // 端到端另有一份本地起 HTTP 假源跑通 check → apply → rollback 的验证。
+  process.stdout.write('\n[12] 更新机制（版本比对 / zip 解压 / 配置 / 目录同步 / 备份）\n');
+  const upd = require(path.join(ROOT, 'core', 'update.js'));
+
+  // 版本比对（含「构建元数据不参与优先级」—— 我第一版写成 [-+](.*) 被单测当场抓到）
+  const vcases = [
+    ['1.1.3', '1.2.0', -1], ['1.2.0', '1.1.3', 1], ['1.2.0', '1.2.0', 0],
+    ['v1.2.0', '1.2.0', 0], ['1.2', '1.2.0', 0], ['1.10.0', '1.9.0', 1],
+    ['1.2.0-beta.1', '1.2.0', -1], ['1.2.0', '1.2.0-beta.1', 1],
+    ['1.2.0+build', '1.2.0', 0], ['bogus', '1.0.0', -1], ['1.0.0', 'bogus', 1], ['', '', 0],
+  ];
+  const vbad = vcases.filter((c) => upd.compareVersions(c[0], c[1]) !== c[2]);
+  ok(vbad.length === 0, 'compareVersions 全部符合预期（预发布/构建元数据/非法串都不抛）',
+    vbad.length ? JSON.stringify(vbad) : vcases.length + ' 例');
+
+  // zip 条目名安全化（zip-slip / 绝对路径 / 盘符 / UNC）
+  const evilNames = ['../../x', 'a/../../x', '/etc/passwd', 'C:/Windows/x', '\\\\srv\\share\\x', ''];
+  ok(evilNames.every((n) => upd.safeEntryName(n) === null), 'zip 条目名拒绝越级 / 绝对路径 / 盘符 / UNC');
+  ok(upd.safeEntryName('a/./b/c.txt') === 'a/b/c.txt', 'zip 条目名规范化正常路径');
+  ok(upd.crc32(Buffer.from('123456789')) === 0xCBF43926, 'crc32 与标准值一致（0xCBF43926）');
+
+  // 最小 zip 写入器（只为测试解压器；产品侧不需要写 zip）
+  const makeZip = (entries) => {
+    const locals = [], centrals = [];
+    let offset = 0;
+    for (const [name, data] of entries) {
+      const nameBuf = Buffer.from(name, 'utf8');
+      const comp = zlib.deflateRawSync(data);
+      const crc = upd.crc32(data);
+      const lh = Buffer.alloc(30);
+      lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0x0800, 6);
+      lh.writeUInt16LE(8, 8); lh.writeUInt32LE(crc, 14);
+      lh.writeUInt32LE(comp.length, 18); lh.writeUInt32LE(data.length, 22);
+      lh.writeUInt16LE(nameBuf.length, 26);
+      locals.push(lh, nameBuf, comp);
+      const ch = Buffer.alloc(46);
+      ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6);
+      ch.writeUInt16LE(0x0800, 8); ch.writeUInt16LE(8, 10); ch.writeUInt32LE(crc, 16);
+      ch.writeUInt32LE(comp.length, 20); ch.writeUInt32LE(data.length, 24);
+      ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(offset, 42);
+      centrals.push(ch, nameBuf);
+      offset += 30 + nameBuf.length + comp.length;
+    }
+    const localBuf = Buffer.concat(locals), centralBuf = Buffer.concat(centrals);
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(entries.length, 8); eocd.writeUInt16LE(entries.length, 10);
+    eocd.writeUInt32LE(centralBuf.length, 12); eocd.writeUInt32LE(localBuf.length, 16);
+    return Buffer.concat([localBuf, centralBuf, eocd]);
+  };
+  const zt = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-zip-'));
+  const helloBuf = Buffer.from('hello 世界\n');
+  fs.writeFileSync(path.join(zt, 't.zip'), makeZip([
+    ['hello.txt', helloBuf],
+    ['sub/中文名.txt', Buffer.from('中文内容')],
+  ]));
+  const zres = upd.unzipTo(path.join(zt, 't.zip'), path.join(zt, 'out'));
+  ok(zres.files === 2, 'zip 解压条目数正确', JSON.stringify(zres));
+  ok(fs.readFileSync(path.join(zt, 'out', 'hello.txt')).equals(helloBuf), 'zip 解压内容逐字节一致（含 CRC 校验通过）');
+  ok(fs.existsSync(path.join(zt, 'out', 'sub', '中文名.txt')), 'zip 解压保留中文文件名（UTF-8 flag 生效）');
+  // 恶意条目：解压时必须**丢弃**，且绝不能写到 destDir 之外
+  fs.writeFileSync(path.join(zt, 'evil.zip'), makeZip([['../evil.txt', Buffer.from('pwned')]]));
+  const eout = path.join(zt, 'eout');
+  const eres = upd.unzipTo(path.join(zt, 'evil.zip'), eout);
+  ok(eres.files === 0 && eres.skipped === 1, 'zip 里的越级条目被丢弃（files=0 / skipped=1）', JSON.stringify(eres));
+  ok(!fs.existsSync(path.join(zt, 'evil.txt')), '越级条目没有写到 destDir 之外（zip-slip 被挡住）');
+  upd.removeTree(zt);
+
+  // 配置优先级：默认 < 包内 update.json < 用户 update.json < 环境变量
+  const ct = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-cfg-'));
+  const c1 = upd.loadConfig({ dataDir: ct });
+  ok(Array.isArray(c1.feeds) && c1.feeds.length >= 1, 'loadConfig 读到了随包 update.json 的 feeds', c1.feeds.length + ' 条');
+  fs.writeFileSync(path.join(ct, 'update.json'), JSON.stringify({ checkIntervalHours: 1, feeds: ['https://user.example/v.json'] }));
+  const c2 = upd.loadConfig({ dataDir: ct });
+  ok(c2.checkIntervalHours === 1 && c2.feeds.length === 1 && c2.feeds[0] === 'https://user.example/v.json',
+    '用户 <dataDir>/update.json 覆盖包内默认值');
+  process.env.WBWP_UPDATE_FEED = 'https://env.example/a.json,https://env.example/b.json';
+  const c3 = upd.loadConfig({ dataDir: ct });
+  delete process.env.WBWP_UPDATE_FEED;
+  ok(c3.feeds.length === 2 && c3.feeds[0] === 'https://env.example/a.json', '环境变量 WBWP_UPDATE_FEED 优先于配置文件');
+  process.env.WBWP_UPDATE_OFF = '1';
+  const c4 = upd.loadConfig({ dataDir: ct });
+  delete process.env.WBWP_UPDATE_OFF;
+  ok(c4.disabled === true, 'WBWP_UPDATE_OFF=1 能整体关闭更新检查');
+
+  // feed 结构校验
+  ok((() => { try { upd.normalizeFeed({ latest: 'x.y' }, 't'); return false; } catch (_) { return true; } })(),
+    'normalizeFeed 拒绝非法 latest');
+  const normFeed = upd.normalizeFeed({ latest: 'v1.2.0', assets: { zip: { url: 'u', sha256: 'AB' } } }, 't');
+  ok(normFeed.latest === '1.2.0' && normFeed.zip.sha256 === 'ab', 'normalizeFeed 规范化版本号与 sha256 大小写');
+
+  // syncTree：覆盖已有 + 新增 + 删除多余 + 清空目录
+  const st1 = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-sync-'));
+  const sSrc = path.join(st1, 'src'), sDst = path.join(st1, 'dst');
+  fs.mkdirSync(path.join(sSrc, 'a'), { recursive: true });
+  fs.writeFileSync(path.join(sSrc, 'a', 'keep.txt'), 'new');
+  fs.writeFileSync(path.join(sSrc, 'added.txt'), 'added');
+  fs.mkdirSync(path.join(sDst, 'a'), { recursive: true });
+  fs.writeFileSync(path.join(sDst, 'a', 'keep.txt'), 'old');
+  fs.writeFileSync(path.join(sDst, 'gone.txt'), 'gone');
+  fs.mkdirSync(path.join(sDst, 'emptydir'), { recursive: true });
+  const sy = upd.syncTree(sSrc, sDst);
+  ok(fs.readFileSync(path.join(sDst, 'a', 'keep.txt'), 'utf8') === 'new', 'syncTree 覆盖已存在文件');
+  ok(fs.existsSync(path.join(sDst, 'added.txt')), 'syncTree 新增缺失文件');
+  ok(!fs.existsSync(path.join(sDst, 'gone.txt')), 'syncTree 删除目标里多余的文件');
+  ok(!fs.existsSync(path.join(sDst, 'emptydir')), 'syncTree 清掉变空的目录');
+  ok(sy.written === 2 && sy.removed === 1, 'syncTree 计数正确', JSON.stringify(sy));
+  upd.removeTree(st1);
+
+  // 备份列表与裁剪（按 mtime 从新到旧，保留最近 N 份）
+  const bt = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-bak-'));
+  ['1.0.0', '1.0.1', '1.0.2'].forEach((v, i) => {
+    const d = path.join(upd.versionsDir(bt), v);
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ version: v }));
+    const t = 1700000000 + i * 60;
+    fs.utimesSync(d, t, t);
+  });
+  const bl = upd.listBackups(bt);
+  ok(bl.length === 3 && bl[0].version === '1.0.2', 'listBackups 按时间从新到旧', bl.map((b) => b.version).join(','));
+  const dropped = upd.pruneBackups(bt, 2);
+  const bl2 = upd.listBackups(bt);
+  ok(bl2.length === 2 && dropped.join(',') === '1.0.0', 'pruneBackups 只留最近 N 份并返回被删的',
+    '删除 ' + dropped.join(',') + '；剩余 ' + bl2.map((b) => b.version).join(','));
+  upd.removeTree(bt);
+
+  // 接线检查（这些是「漏接就静默失效」的地方，值得钉住）
+  const routesSrc = readT('server/routes.js');
+  ok(['/api/update', '/api/update/check', '/api/update/apply', '/api/update/rollback']
+    .every((p) => routesSrc.includes("'" + p + "'")), '四条 /api/update* 路由都在 routes.js');
+  const startSrc = readT('scripts/start-ui.js');
+  ok(startSrc.includes('startUpdateLoop(dir)') && startSrc.includes('startUpdateLoop'), 'start-ui.js 挂上了更新检查循环');
+  const panelSrc = readT('ui/dsh-ui/panel.js');
+  ok(panelSrc.includes("data-act=\"check-update\"") && panelSrc.includes("data-act=\"apply-update\"") &&
+    panelSrc.includes("data-act=\"rollback\""), '面板「关于」页有 检查 / 立即更新 / 回滚 三个动作');
+  ok(panelSrc.includes("req('/api/update')") && panelSrc.includes("'/api/update/check'") &&
+    panelSrc.includes("'/api/update/apply'") && panelSrc.includes("'/api/update/rollback'"),
+    '面板四个更新接口都接上了');
+  const updCfg = JSON.parse(readT('update.json'));
+  ok(Array.isArray(updCfg.feeds) && updCfg.feeds.length >= 1 && /^https:\/\//.test(updCfg.feeds[0]),
+    'update.json 配了更新源且主源是 https', updCfg.feeds[0]);
+  ok(fs.existsSync(path.join(ROOT, 'scripts', 'release-feed.js')), '发版脚本 scripts/release-feed.js 存在');
+
+  // ⭐ 这条是回归钉：真实服务经 HTTP 报的 currentVersion 必须是 package.json 的版本。
+  //    踩过：routes.js 原本直接取 ctx.version，而 standalone 传进来的是插件命名空间
+  //    （值就是 "standalone"）→ 版本比对永远判「有更新」，每个用户都会看到升不完的新版本。
+  const apiUpd = await J(BASE + '/api/update');
+  ok(apiUpd && apiUpd.ok === true, 'GET /api/update 返回 ok');
+  ok(apiUpd && apiUpd.currentVersion === pkgVer,
+    'HTTP 报的 currentVersion === package.json 的版本（不是插件命名空间）',
+    'api=' + (apiUpd && apiUpd.currentVersion) + ' pkg=' + pkgVer);
+  ok(apiUpd && Array.isArray(apiUpd.feeds) && apiUpd.feeds.length >= 1, 'HTTP 回显生效的更新源');
 
   server.close();
   fs.rmSync(dataDir, { recursive: true, force: true });

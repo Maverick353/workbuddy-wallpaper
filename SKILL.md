@@ -4,7 +4,7 @@ description: 壁纸引擎与注入式 UI 技能（workbuddy-wallpaper）—— �
 description_zh: 壁纸引擎与注入式 UI（玻璃拟态面板 + 拉绳吉祥物；自定义/工坊壁纸、场景实时渲染、文字颜色与字体切换）
 description_en: Wallpaper engine with an injected glassmorphism UI for WorkBuddy — custom and Steam Workshop wallpapers, live scene rendering, and app-wide text color/font control.
 license: AGPL-3.0-or-later
-version: 1.1.3
+version: 1.2.0
 agent_created: true
 ---
 
@@ -81,8 +81,11 @@ node scripts/companion.js --uninstall-autostart  # 取消自启
 node scripts/companion.js --stop-service         # 手动停服务
 node scripts/companion.js --stop-watchdog        # 停掉常驻看门狗
 
-# 自验证（21 项：服务面 + 前端注入契约）
+# 自验证（89 项：服务面 + 前端注入契约 + 宿主锚点 + 更新机制）
 node scripts/verify.js
+
+# 生成更新 feed（version.json）并把更新包镜像到 landing/ —— 发版时才用
+node scripts/release-feed.js --min-supported 1.1.0 --notes "本版改了什么"
 ```
 
 **一键安装为 WorkBuddy 技能**（复制到 `~/.workbuddy/skills/` 并可选注册开机自启）：
@@ -91,6 +94,27 @@ node scripts/verify.js
 node scripts/install.js              # 安装
 node scripts/install.js --uninstall  # 卸载（停服务 + 撤销自启 + 删目录）
 ```
+
+## 更新机制（发布方必读）
+
+已安装的用户**不需要盯 Releases**：服务会自动检查，面板「关于」页一键更新，失败可回滚。
+四条触发时机（静态站只能轮询，叠起来才是"准推送"）：启动后 25s / 每 6h / 打开面板（读缓存）/
+手动按钮。配置在 `update.json`（用户可用 `<数据目录>/update.json` 覆盖）。
+
+**发新版时按这个顺序做**（发布与部署必须分开 —— tag 推出去不可回滚）：
+
+```bash
+git archive --format=zip --prefix=workbuddy-wallpaper/ -o dist/workbuddy-wallpaper.zip HEAD
+node scripts/release-feed.js --min-supported <最低支持版本> --notes-file _tmp/release-notes.md
+#   ① 校验包内 package.json 版本与要发布的一致（防串包）
+#   ② 算 sha256/size 写进 landing/version.json
+#   ③ 把更新包镜像到 landing/（国内直连的主下载源）
+git tag vX.Y.Z && git push origin main vX.Y.Z        # 触发 release.yml 出 zip + exe
+# ④ 再单独部署 landing/ 到静态站，核对 /version.json 可访问且 sha256 一致
+```
+
+**本地试更新**：把 `<数据目录>/update.json` 的 `feeds` 指到一个本地 HTTP 假源，
+或在面板上一路点到「立即更新」。`WBWP_UPDATE_OFF=1` 可整体关掉检查。
 
 ## 关键事实（排查问题先看这里）
 

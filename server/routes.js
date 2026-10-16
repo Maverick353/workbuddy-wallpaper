@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const core = require('../core/index.js');
 const media = core.media;
@@ -21,6 +22,7 @@ const store = core.store;
 const we = core.we;
 const { readMask } = require('../core/theme-css.js'); // 蒙版与 theme-css 单一源
 const fonts = require('../core/fonts.js');            // 本机字体枚举（字体页的可搜索列表）
+const update = require('../core/update.js');          // 版本检测与更新推送（零依赖）
 
 /** 本插件负责的 API 路径（daemon 的 handleApi 据此转发）。 */
 const ROUTES = [
@@ -35,6 +37,10 @@ const ROUTES = [
   ['GET', '/api/mask'],
   ['POST', '/api/mask'],
   ['GET', '/api/fonts'],
+  ['GET', '/api/update'],
+  ['POST', '/api/update/check'],
+  ['POST', '/api/update/apply'],
+  ['POST', '/api/update/rollback'],
 ];
 
 /** 本插件负责的静态路径前缀（daemon 的 startServer 据此转发）。 */
@@ -53,7 +59,54 @@ function ctxWithDirs(ctx) {
 function isApiPath(p) {
   if (p === '/api/wallpaper/health') return true;
   if (p === '/api/wallpapers' || p === '/api/custom-wallpapers' || p === '/api/we-wallpapers' || p === '/api/we-apply' || p === '/api/theme-bg' || p === '/api/mask' || p === '/api/fonts') return true;
+  if (p === '/api/update' || p === '/api/update/check' || p === '/api/update/apply' || p === '/api/update/rollback') return true;
   return false;
+}
+
+// ── 更新机制的编排（业务在 core/update.js，这里只做「拼装 + 决定何时重启」）────
+const PKG_ROOT = path.resolve(__dirname, '..');
+
+/**
+ * 当前安装的版本号。
+ * ⚠️ **不能直接用 `ctx.version`**：standalone 传进来的 `version` 是插件命名空间（值就是
+ *    `"standalone"`），不是 semver。拿它去比版本 → `parseVersion` 失败 → 恒判「有更新」，
+ *    每个用户都会看到一个永远升不完的新版本（实测抓到）。
+ * 所以：**以 `package.json` 为准**（它就是这份已安装代码的版本），`ctx.version` 只在
+ * 拿不到文件、且它本身是合法 semver 时才兜底。
+ */
+function currentVersion(ctx) {
+  try {
+    const v = String(JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8')).version || '');
+    if (update.parseVersion(v)) return v;
+  } catch (_) {}
+  const cv = ctx && ctx.version ? String(ctx.version) : '';
+  return update.parseVersion(cv) ? cv : '0.0.0';
+}
+
+/** 面包屑：一份「面板直接可渲染」的状态快照（不发网络）。 */
+function updateStatus(ctx) {
+  const dataDir = ctx.dataDir;
+  const cfg = update.loadConfig({ dataDir });
+  const cache = update.readCache(dataDir);
+  const r = cache.result || null;
+  return Object.assign({
+    ok: true,
+    currentVersion: currentVersion(ctx),
+    checked: !!r,
+    feeds: cfg.feeds,
+    channel: cfg.channel,
+    disabled: !!cfg.disabled,
+    startupDelaySeconds: cfg.startupDelaySeconds,
+    checkIntervalHours: cfg.checkIntervalHours,
+    keepBackups: cfg.keepBackups,
+    backups: update.listBackups(dataDir).map((b) => ({ version: b.version, at: new Date(b.at).toISOString() })),
+  }, r || {}, { lastCheckAt: cache.lastCheckAt || (r && r.lastCheckAt) || 0 });
+}
+
+/** 更新前后比较 `scripts/companion.js` 是否变了 —— 变了要提示用户「看门狗需重启」。 */
+function companionHash() {
+  try { return crypto.createHash('sha256').update(fs.readFileSync(path.join(PKG_ROOT, 'scripts', 'companion.js'))).digest('hex'); }
+  catch (_) { return null; }
 }
 
 /** 是否本插件负责的静态路径（含方法判定）。 */
@@ -161,6 +214,72 @@ function createRoutes(ctx) {
           if (cur) applied = await store.applyThemeId(c, cur);
         } catch (_) { /* 重应用失败不判整体失败：值已落盘，下次注入即生效 */ }
         return { status: 200, body: { ok: true, opacity, applied } };
+      }).then((r) => send(res, r));
+    }
+    // ── 更新机制 ────────────────────────────────────────────────────────────
+    if (m === 'GET' && p === '/api/update') {
+      // 只读缓存，不发网络 —— 面板打开时渲染用它，绝不会卡住 UI
+      return send(res, { status: 200, body: updateStatus(c) });
+    }
+    if (m === 'POST' && p === '/api/update/check') {
+      return ctx.readBody(req).then(async (body) => {
+        const r = await update.checkForUpdate({
+          dataDir: c.dataDir, currentVersion: currentVersion(c), force: !!(body && body.force),
+        });
+        return { status: 200, body: Object.assign(updateStatus(c), r) };
+      }).then((r) => send(res, r));
+    }
+    if (m === 'POST' && p === '/api/update/apply') {
+      return ctx.readBody(req).then(async (body) => {
+        const b = body || {};
+        if (update.loadConfig({ dataDir: c.dataDir }).disabled) {
+          return { status: 400, body: { ok: false, error: '更新已关闭（WBWP_UPDATE_OFF=1）' } };
+        }
+        const before = companionHash();
+        // 应用前**强制**再检查一次：面板上看到的版本可能已经过期（别人抢先发了新版）
+        const st = await update.checkForUpdate({ dataDir: c.dataDir, currentVersion: currentVersion(c), force: true });
+        if (st.disabled) return { status: 400, body: { ok: false, error: st.error || '更新已关闭' } };
+        if (!st.ok) return { status: 502, body: { ok: false, error: '检查更新失败：' + (st.error || '未知原因') } };
+        if (!st.hasUpdate) return { status: 409, body: { ok: false, error: '已是最新版本（' + st.currentVersion + '）' } };
+        if (!st.canUpdate) return { status: 409, body: { ok: false, error: 'feed 没有可用的更新包地址' } };
+        if (b.expectVersion && String(b.expectVersion) !== String(st.latest)) {
+          return { status: 409, body: { ok: false, error: '版本已变化：你看到的是 ' + b.expectVersion + '，实际已到 ' + st.latest + '。请重新检查。' } };
+        }
+        if (st.minSupported && update.compareVersions(st.latest, st.minSupported) < 0) {
+          return { status: 500, body: { ok: false, error: 'feed 自相矛盾：latest(' + st.latest + ') 低于 minSupported(' + st.minSupported + ')' } };
+        }
+        let out;
+        try {
+          out = await update.applyUpdate({
+            dataDir: c.dataDir, version: st.latest, zip: st.zip, targetDir: PKG_ROOT,
+          });
+        } catch (e) {
+          return { status: 500, body: { ok: false, error: '更新失败：' + ((e && e.message) || e) } };
+        }
+        const watchdogChanged = before !== companionHash();
+        const restart = b.restart === false ? 'none' : update.scheduleRestart({ dataDir: c.dataDir, pkgRoot: PKG_ROOT });
+        return { status: 200, body: Object.assign(out, { ok: true, restart, watchdogChanged, notes: st.notes }) };
+      }).then((r) => send(res, r));
+    }
+    if (m === 'POST' && p === '/api/update/rollback') {
+      return ctx.readBody(req).then(async (body) => {
+        const b = body || {};
+        // 降级护栏：不允许回滚到低于 feed 声明的 minSupported —— 那比留在当前版本更糟
+        // （minSupported 代表「低于它接口契约就不兼容了」）。
+        const cached = update.readCache(c.dataDir).result;
+        if (b.version && cached && cached.minSupported && update.compareVersions(String(b.version), cached.minSupported) < 0) {
+          return { status: 400, body: { ok: false, error: '不能回滚到 ' + b.version + '：低于最低支持版本 ' + cached.minSupported } };
+        }
+        const before = companionHash();
+        let out;
+        try {
+          out = await update.rollbackTo({ dataDir: c.dataDir, targetDir: PKG_ROOT, version: b.version });
+        } catch (e) {
+          return { status: 500, body: { ok: false, error: '回滚失败：' + ((e && e.message) || e) } };
+        }
+        const watchdogChanged = before !== companionHash();
+        const restart = b.restart === false ? 'none' : update.scheduleRestart({ dataDir: c.dataDir, pkgRoot: PKG_ROOT });
+        return { status: 200, body: Object.assign(out, { ok: true, restart, watchdogChanged }) };
       }).then((r) => send(res, r));
     }
     return ctx.json(res, 404, { ok: false, error: 'wallpaper: 未支持的接口 ' + m + ' ' + p });

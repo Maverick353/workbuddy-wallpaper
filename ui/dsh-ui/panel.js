@@ -83,6 +83,8 @@ function wallpaperPanel(payload) {
     rfilter: (function () { try { var r = JSON.parse(localStorage.getItem(LS_REPO) || '{}'); return r.filter || 'all'; } catch (_) { return 'all'; } })(),
     rquery: '',                  // 壁纸仓库：标签过滤 + 关键词
     fonts: null, fontsLoading: false, fontQuery: '',   // 字体页：本机字体列表 + 搜索词
+    // 更新机制：「关于」页的数据 + 忙碌态 + 错误。upd 为 null 表示还没拿到过状态。
+    upd: null, updBusy: '', updErr: '', updMsg: '',
   };
 
   function prefs(patch) {
@@ -164,6 +166,19 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-tab{position:relative;z-index:1;flex:1 1 0;min-width:0;height:28px;padding:0 4px;border:0;background:transparent;border-radius:8px;cursor:pointer;white-space:nowrap;font-size:12px;line-height:1;color:var(--wdw-ink-2);transition:color var(--wdw-dur-fast) var(--wdw-ease)}',
       '#' + ID.root + ' .p-tab:hover{color:var(--wdw-ink)}',
       '#' + ID.root + ' .p-tab.wdw-on{color:var(--wdw-ink);font-weight:600}',
+      // ── 页签小红点（「关于」页有新版本时）──
+      // 复用项目里唯一保留下来的深色元素——红色未读徽标——的视觉语言，不新造一套配色。
+      '#' + ID.root + ' .p-dot{position:absolute;top:2px;right:2px;width:6px;height:6px;border-radius:50%;',
+      'background:#ff4d4f;box-shadow:0 0 0 2px color-mix(in srgb,var(--wb-bg-popover,#1a1e26) 70%,transparent)}',
+      // ── 更新区（「关于」页）──
+      '#' + ID.root + ' .p-upd{border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:9px 10px;display:flex;flex-direction:column;gap:7px}',
+      '#' + ID.root + ' .p-upd.wdw-new{border-color:rgba(255,196,0,.45);background:rgba(255,196,0,.07)}',
+      '#' + ID.root + ' .p-upd.wdw-must{border-color:rgba(255,77,79,.5);background:rgba(255,77,79,.08)}',
+      '#' + ID.root + ' .p-upd-h{font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px}',
+      '#' + ID.root + ' .p-upd-note{font-size:11px;line-height:1.55;color:var(--wdw-ink-2);white-space:pre-wrap;max-height:132px;overflow-y:auto}',
+      '#' + ID.root + ' .p-upd-meta{font-size:10px;line-height:1.5;color:var(--wdw-ink-3);word-break:break-all}',
+      '#' + ID.root + ' .p-upd-acts{display:flex;gap:6px;flex-wrap:wrap}',
+      '#' + ID.root + ' .p-busy{opacity:.65;pointer-events:none}',
       // 内容区：fade + 上移落定
       '#' + ID.root + ' .p-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:6px 12px 14px}',
       '#' + ID.root + ' .p-pane{display:flex;flex-direction:column;gap:12px;animation:wdw-tab-in 180ms var(--wdw-ease)}',
@@ -456,13 +471,136 @@ function wallpaperPanel(payload) {
       + '</div>';
   }
 
+  // ── 更新机制（数据来自服务端 /api/update*）───────────────────────────────
+  // 三条不变量：
+  //   ① 打开面板**只读缓存**（`/api/update` 不发网络）→ 面板永远不会因为网络卡住；
+  //   ② 缓存过期（>1h）才后台补一次真检查，失败只落到 st.updErr，不影响其它页；
+  //   ③ 真正动手（apply/rollback）必须先 window.confirm —— 会替换已安装文件。
+  var UPDATE_STALE_MS = 3600000;
+
+  function loadUpdate(forceCheck) {
+    return req('/api/update').then(function (d) {
+      if (d == null) { st.updErr = '服务不可达'; return null; }
+      st.upd = d;
+      var stale = !d.lastCheckAt || (Date.now() - Number(d.lastCheckAt) > UPDATE_STALE_MS);
+      if (forceCheck || stale) return doCheck(false);
+      return d;
+    }).catch(function () { return null; });
+  }
+
+  function doCheck(force) {
+    st.updBusy = 'check'; st.updErr = ''; st.updMsg = ''; paint();
+    return req('/api/update/check', { force: !!force }).then(function (d) {
+      st.updBusy = '';
+      if (d == null) { st.updErr = '服务不可达，检查失败'; paint(); return null; }
+      st.upd = d;
+      if (d.ok === false && d.error) st.updErr = '检查失败：' + d.error;
+      else if (d.checkedAt) st.updMsg = '检查完成（' + (d.hasUpdate ? '有新版本 v' + d.latest : '已是最新') + '）';
+      paint();
+      return d;
+    }).catch(function (e) { st.updBusy = ''; st.updErr = '检查异常：' + ((e && e.message) || e); paint(); return null; });
+  }
+
+  function doApply() {
+    var u = st.upd || {};
+    var v = u.latest;
+    if (!v) { st.updErr = '还没有可用的新版本信息，先点「检查更新」'; paint(); return; }
+    if (window.confirm && !window.confirm('更新到 v' + v + '？\n\n将自动：下载 → 校验 sha256 → 备份当前版本 → 覆盖 → 重启壁纸服务。\n更新期间壁纸会消失几秒（服务重启）。\n\n旧版本会留在数据目录 versions/ 下，可随时回滚。')) return;
+    st.updBusy = 'apply'; st.updErr = ''; st.updMsg = ''; paint();
+    req('/api/update/apply', { expectVersion: v }).then(function (d) {
+      st.updBusy = '';
+      if (d == null) { st.updErr = '服务不可达（可能已在重启），稍等 5 秒再打开面板看版本'; paint(); return; }
+      if (d.ok === false) { st.updErr = '更新失败：' + (d.error || ''); paint(); return; }
+      st.updMsg = '已更新到 v' + d.version + '，服务正在重启（约 5 秒）。' +
+        (d.watchdogChanged ? ' 看门狗的代码也变了 —— 它会在下次开机/登录时换新。' : '');
+      st.upd = Object.assign({}, st.upd, { hasUpdate: false, currentVersion: d.version, mustUpdate: false, notes: '' });
+      paint();
+    }).catch(function (e) {
+      st.updBusy = '';
+      st.updErr = '更新异常：' + ((e && e.message) || e) + '（服务可能已重启，稍后重开面板核对版本）';
+      paint();
+    });
+  }
+
+  function doRollback(ver) {
+    if (window.confirm && !window.confirm('回滚到 v' + ver + '？\n\n会用备份覆盖当前已安装的文件，然后重启服务。')) return;
+    st.updBusy = 'rollback'; st.updErr = ''; st.updMsg = ''; paint();
+    req('/api/update/rollback', { version: ver }).then(function (d) {
+      st.updBusy = '';
+      if (d == null || d.ok === false) { st.updErr = '回滚失败：' + ((d && d.error) || '服务不可达'); paint(); return; }
+      st.updMsg = '已回滚到 v' + d.version + '，服务正在重启（约 5 秒）。';
+      paint();
+    }).catch(function (e) { st.updBusy = ''; st.updErr = '回滚异常：' + ((e && e.message) || e); paint(); });
+  }
+
   function paneAbout() {
+    // u 来自 `/api/update`（纯读缓存，不发网络）—— 所以打开面板不会卡。
+    var u = st.upd || {};
+    // 兜底版本号保持字面量：verify.js [9] 段会断言它与 package.json 一致（防版本号漂移）
+    var cur = u.currentVersion || '1.2.0';
+    var hasNew = !!u.hasUpdate;
+    var must = !!u.mustUpdate;
+    var busy = st.updBusy || '';
+    var cls = 'p-upd' + (must ? ' wdw-must' : (hasNew ? ' wdw-new' : ''));
+
+    var head = must ? '必须更新（低于最低支持版本）'
+      : hasNew ? ('发现新版本 v' + esc(u.latest || ''))
+      : (u.checked ? '已是最新版本' : '还没检查过');
+
+    var lines = [];
+    lines.push('<div class="' + cls + '">');
+    lines.push('<div class="p-upd-h">' + (busy ? '⋯ ' : '') + esc(head) + '</div>');
+    if (hasNew || must) {
+      lines.push('<div class="p-upd-meta">当前 v' + esc(cur) + ' → 最新 v' + esc(u.latest || '') +
+        (u.minSupported ? ('　最低支持 v' + esc(u.minSupported)) : '') + '</div>');
+    }
+    if (u.notes) lines.push('<div class="p-upd-note">' + esc(String(u.notes).slice(0, 1200)) + '</div>');
+
+    // 动作按钮
+    var acts = [];
+    acts.push('<button class="p-btn" type="button" data-act="check-update"' + (busy ? ' disabled' : '') + '>' +
+      (busy === 'check' ? '检查中…' : '检查更新') + '</button>');
+    if (hasNew && u.canUpdate) {
+      acts.push('<button class="p-btn wdw-primary" type="button" data-act="apply-update"' + (busy ? ' disabled' : '') + '>' +
+        (busy === 'apply' ? '更新中…' : '立即更新') + '</button>');
+    }
+    if (u.homepage) {
+      acts.push('<button class="p-btn" type="button" data-act="open-home">打开发布页</button>');
+    }
+    lines.push('<div class="p-upd-acts">' + acts.join('') + '</div>');
+
+    // 上次检查 / 失败原因 / 更新源
+    var meta = [];
+    if (u.lastCheckAt) {
+      var d = new Date(u.lastCheckAt);
+      meta.push('上次检查 ' + d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +
+        ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()));
+    } else meta.push('从未检查过');
+    if (u.error) meta.push('失败：' + esc(String(u.error).slice(0, 240)));
+    else if (u.source) meta.push('源 ' + esc(String(u.source).replace(/^https?:\/\//, '').slice(0, 90)));
+    if (u.disabled) meta.push('更新检查已在配置里关闭');
+    lines.push('<div class="p-upd-meta">' + meta.join('<br>') + '</div>');
+
+    // 回滚（有备份才显示）
+    var bks = u.backups || [];
+    if (bks.length) {
+      var b0 = bks[0];
+      lines.push('<div class="p-upd-acts"><button class="p-btn" type="button" data-act="rollback" data-ver="' +
+        esc(b0.version) + '"' + (busy ? ' disabled' : '') + '>' +
+        (busy === 'rollback' ? '回滚中…' : '回滚到 v' + esc(b0.version)) + '</button>' +
+        '<span class="p-upd-meta" style="align-self:center">共 ' + bks.length + ' 份备份</span></div>');
+    }
+    if (st.updErr) lines.push('<div class="p-upd-meta">' + esc(st.updErr) + '</div>');
+    if (st.updMsg) lines.push('<div class="p-upd-meta">' + esc(st.updMsg) + '</div>');
+    lines.push('</div>');
+
     return '<div class="p-pane">'
       + '<div class="p-sec"><span class="p-sec-t">壁纸引擎</span>'
-      + row('版本', '插件内核 workdaddy.wallpaper', '<span class="p-hint">v1.1.3</span>')
+      + row('版本', '插件内核 workdaddy.wallpaper', '<span class="p-hint">v' + esc(cur) + '</span>')
       + row('UI 规格', '原创玻璃拟态视觉语言', '<span class="p-hint">rope dock + 5 页签</span>')
       + row('许可', 'AGPL-3.0-or-later', '<span class="p-hint">含 MIT 第三方声明</span>')
       + '</div>'
+      + '<div class="p-sec"><span class="p-sec-t">更新</span>' + lines.join('') + '</div>'
       + '<div class="p-sec"><span class="p-sec-t">数据</span>'
       + row('接口地址', '内核 HTTP API', '<span class="p-hint">' + esc(API.replace(/^https?:\/\//, '')) + '</span>')
       + row('当前壁纸', '', '<span class="p-hint">' + esc(st.cur || '—') + '</span>')
@@ -473,6 +611,8 @@ function wallpaperPanel(payload) {
       + '</div>'
       + '</div>';
   }
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
 
   function paneHtml() {
     switch (st.tab) {
@@ -498,7 +638,10 @@ function wallpaperPanel(payload) {
       el.innerHTML = [
         '<div class="p-head"><b class="p-title">壁纸</b></div>',
         '<div class="p-tabs" role="tablist"><span class="p-tabs__pill"></span>',
-        TABS.map(function (t) { return '<button class="p-tab" type="button" role="tab" data-tab="' + t.id + '">' + t.label + '</button>'; }).join(''),
+        TABS.map(function (t) {
+          var dot = (t.id === 'about' && st.upd && st.upd.hasUpdate) ? '<i class="p-dot"></i>' : '';
+          return '<button class="p-tab" type="button" role="tab" data-tab="' + t.id + '">' + t.label + dot + '</button>';
+        }).join(''),
         '</div>',
         '<div class="p-body" id="wdw-panel-body"></div>',
         '<div class="p-foot"><span>workbuddy-wallpaper · 原创壁纸 UI</span></div>',
@@ -672,6 +815,13 @@ function wallpaperPanel(payload) {
             if (f) f.click();
           } else if (a === 'scan-we') { loadWe(true); }
           else if (a === 'font-reset') { setFont({ family: '', familyName: '' }); paint(); }
+          else if (a === 'check-update') { doCheck(true); }
+          else if (a === 'apply-update') { doApply(); }
+          else if (a === 'rollback') { doRollback(act.getAttribute('data-ver')); }
+          else if (a === 'open-home') {
+            var hp = (st.upd && st.upd.homepage) || 'https://github.com/Maverick353/workbuddy-wallpaper';
+            try { window.open(hp, '_blank'); } catch (_) {}
+          }
           else if (a === 'shutdown') {
             // 关闭壁纸：① 通知服务写 .stopped 标志并退出（companion 据此不再自动拉起）
             //           ② 本地立即拆除注入的 UI/背景层，给用户即时反馈
@@ -729,6 +879,10 @@ function wallpaperPanel(payload) {
     if (id === 'font' && !(st.fonts && st.fonts.length)) {
       loadFonts().then(function () { if (st.tab === 'font') paint(); }).catch(function () {});
     }
+    // 关于页：每次进入都刷新一次更新状态（仍是先读缓存，只有过期才联网）
+    if (id === 'about') {
+      loadUpdate(true).then(function () { if (st.tab === 'about') paint(); }).catch(function () {});
+    }
   }
   // 关闭壁纸：本地拆除注入的一切（UI 三件套 + 背景层 + 岛观察器 + 全局 API）。
   // 与服务端 /api/shutdown 配合：服务退出 + 页面清净，用户视角「壁纸关掉了」。
@@ -753,6 +907,8 @@ function wallpaperPanel(payload) {
     el.classList.add('wdw-open');
     // 服务不可达时 loadXxx 置 offline → paint 出错误态提示条（而非空白/无反应）
     Promise.all([loadWallpapers(), loadCustom()]).then(function () { paint(); }).catch(function () {});
+    // 更新状态：读缓存立刻渲染；缓存过期才后台补检查（不阻塞打开）
+    loadUpdate().then(function () { if (st.open) paint(); }).catch(function () {});
     paint();
   }
   function api_close() {

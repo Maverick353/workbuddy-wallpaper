@@ -79,6 +79,46 @@ function readCurrentThemeId(dir) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * 更新检查的「触发时机」之一：服务启动后延迟一次 + 之后每 N 小时一次。
+ * 另外两条（面板打开时按需 / 用户手动点）走 HTTP 接口，不在这里。
+ *
+ * 三条不变量：
+ *   ① **延迟启动**（默认 25s）—— 先让服务、注入、壁纸都跑完，绝不抢启动路径；
+ *      只有静态站可拉，所以只能轮询；这四条触发叠加起来才是"准推送"。
+ *   ② **绝不因为更新失败而影响服务**：全程 try/catch，失败只写一行日志。
+ *   ③ `unref()` 定时器 —— 它不该阻止进程退出（stop-ui / Ctrl+C 要能干净退）。
+ */
+function startUpdateLoop(dir) {
+  const upd = core.update;
+  let cfg;
+  try { cfg = upd.loadConfig({ dataDir: dir }); } catch (_) { return; }
+  if (cfg.disabled) { log('更新检查已关闭（WBWP_UPDATE_OFF=1）'); return; }
+  const ver = core.PLUGIN_VERSION || '';
+  const run = async (tag) => {
+    try {
+      const r = await upd.checkForUpdate({ dataDir: dir, currentVersion: ver, force: false });
+      if (!r.ok) { log('更新检查失败（' + tag + '）：' + (r.error || '未知原因')); return; }
+      if (r.hasUpdate) {
+        log('发现新版本 v' + r.latest + '（当前 v' + r.currentVersion + '）→ 面板「关于」页可一键更新');
+      } else {
+        log('已是最新版本 v' + r.currentVersion);
+      }
+      if (r.mustUpdate) log('⚠ 当前 v' + r.currentVersion + ' 低于最低支持版本 v' + r.minSupported + '，必须更新');
+    } catch (e) {
+      log('更新检查异常（' + tag + '）：' + ((e && e.message) || e));
+    }
+  };
+  const delayMs = Math.max(1, Number(cfg.startupDelaySeconds || 25)) * 1000;
+  const everyMs = Math.max(1, Number(cfg.checkIntervalHours || 6)) * 3600 * 1000;
+  const t1 = setTimeout(() => { run('startup'); }, delayMs);
+  const t2 = setInterval(() => { run('interval'); }, everyMs);
+  if (t1.unref) t1.unref();
+  if (t2.unref) t2.unref();
+  log('更新检查已安排：启动后 ' + Math.round(delayMs / 1000) + 's 首次，之后每 ' +
+    Math.round(everyMs / 3600000) + 'h 一次（主源 ' + (cfg.feeds[0] || '未配置') + '）');
+}
+
 (async () => {
   const rawArgs = process.argv.slice(2);
   const args = parseArgs(rawArgs);
@@ -118,6 +158,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   try { fs.unlinkSync(path.join(dir, '.stopped')); } catch (_) {}
   process.on('exit', () => { try { fs.unlinkSync(pidFile); } catch (_) {} });
   log('服务已启动 ' + apiBase + '（数据目录 ' + dir + '，种子 ' + seeded + ' 张）');
+
+  // ── ①b 更新检查循环（不阻塞：延迟 + unref，失败只记日志）─────────────────
+  startUpdateLoop(dir);
 
   if (noInject) { log('--no-inject：仅服务模式，Ctrl+C 退出。'); return; }
 

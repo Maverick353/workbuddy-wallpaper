@@ -12,9 +12,10 @@ const store = require('./store.js');
 const we = require('./we.js');
 const renderer = require('./renderer.js');
 const themeCss = require('./theme-css.js');
+const update = require('./update.js');
 
 const PLUGIN_ID = 'workdaddy.wallpaper';
-const PLUGIN_VERSION = '1.1.3';
+const PLUGIN_VERSION = '1.2.0';
 
 module.exports = {
   PLUGIN_ID,
@@ -24,6 +25,7 @@ module.exports = {
   we,
   renderer,
   themeCss,
+  update,
   // 常用直通
   VIDEO_EXTS: media.VIDEO_EXTS,
   MEDIA_MIME: media.MEDIA_MIME,

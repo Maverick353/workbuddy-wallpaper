@@ -1,0 +1,13 @@
+{
+  "_comment": "更新机制配置（随包分发的默认值）。用户可覆盖：<数据目录>/update.json。环境变量优先：WBWP_UPDATE_FEED / WBWP_UPDATE_OFF=1。",
+  "feeds": [
+    "https://workbuddy-wallpaper.app.workbuddy.host/version.json",
+    "https://raw.githubusercontent.com/Maverick353/workbuddy-wallpaper/main/landing/version.json"
+  ],
+  "channel": "stable",
+  "startupDelaySeconds": 25,
+  "checkIntervalHours": 6,
+  "minCheckIntervalSeconds": 300,
+  "keepBackups": 3,
+  "timeoutMs": 12000
+}
