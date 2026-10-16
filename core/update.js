@@ -324,6 +324,33 @@ function walkDirs(root, base, acc) {
 }
 
 /**
+ * 探测解压后的**有效根**。
+ *
+ * 为什么需要它：发布包由 `git archive --prefix=workbuddy-wallpaper/` 打出，
+ * **所有条目都带一层顶层目录前缀**，根下没有 `package.json`。
+ * 直接按根读会必然失败——这正是 v1.2.0「点『立即更新』必失败」的根因
+ * （错误表现为「更新包内版本(undefined) 与目标版本(x) 不一致」）。
+ *
+ * 规则：根下有 `package.json` → 用根；
+ *       根下恰好只有一个目录、没有其它文件、且那个目录里有 `package.json` → 下沉一层；
+ *       其它情况 → 用根（让后面的冒烟校验去报明确的错，不在这里猜）。
+ *
+ * ⚠️ 不写死 `workbuddy-wallpaper` 这个名字：打包前缀将来可能变，靠"形状"判断而不是靠名字。
+ */
+function effectiveRoot(dir) {
+  if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
+  let items = [];
+  try { items = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return dir; }
+  const dirs = items.filter((it) => it.isDirectory());
+  const files = items.filter((it) => !it.isDirectory());
+  if (dirs.length === 1 && files.length === 0) {
+    const inner = path.join(dir, dirs[0].name);
+    if (fs.existsSync(path.join(inner, 'package.json'))) return inner;
+  }
+  return dir;
+}
+
+/**
  * 把 src 的内容同步到 dest（**文件级**，不删 dest 目录本身）。
  * 为什么不像 install.js 那样 `removeTree(dest)`：正在跑的服务/看门狗可能以 dest 为当前目录，
  * Windows 删不掉「某进程的当前目录」。文件级覆盖 + 删除多余文件 + 清空目录，效果等价且更安全。
@@ -560,12 +587,15 @@ async function applyUpdate(o) {
   const uz = unzipTo(zipPath, staging);
   if (!uz.files) throw new Error('更新包里没有文件');
 
+  // ②′ 有效根探测（P0-1）：发布包带一层顶层目录前缀，直接按根读会 100% 失败。
+  const root = effectiveRoot(staging);
+
   // ③ 冒烟校验：解压出来的 package.json 版本必须等于目标版本（防串包/防 feed 写错）
-  const stagedPkg = readJsonSafe(path.join(staging, 'package.json'), null);
+  const stagedPkg = readJsonSafe(path.join(root, 'package.json'), null);
   if (!stagedPkg || String(stagedPkg.version) !== version) {
     throw new Error('更新包内版本(' + (stagedPkg && stagedPkg.version) + ') 与目标版本(' + version + ') 不一致');
   }
-  if (!fs.existsSync(path.join(staging, 'SKILL.md'))) throw new Error('更新包缺少 SKILL.md（不像本技能的包）');
+  if (!fs.existsSync(path.join(root, 'SKILL.md'))) throw new Error('更新包缺少 SKILL.md（不像本技能的包）');
 
   // ④ 备份当前 → dataDir/versions/<旧版本>
   const curPkg = readJsonSafe(path.join(targetDir, 'package.json'), null);
@@ -579,8 +609,8 @@ async function applyUpdate(o) {
     backup = { version: from, dir: bdir, files: bk.written };
   }
 
-  // ⑤ 同步覆盖
-  const sync = syncTree(staging, targetDir);
+  // ⑤ 同步覆盖（从**有效根**开始，不是解压目录根）
+  const sync = syncTree(root, targetDir);
   const afterPkg = readJsonSafe(path.join(targetDir, 'package.json'), null);
   if (!afterPkg || String(afterPkg.version) !== version) {
     // 写坏了：自动回滚
@@ -658,7 +688,7 @@ module.exports = {
   parseVersion, compareVersions, isNewer,
   loadConfig, httpGetJson, downloadTo,
   crc32, safeEntryName, unzipTo,
-  walkFiles, walkDirs, syncTree, removeTree,
+  walkFiles, walkDirs, syncTree, removeTree, effectiveRoot,
   versionsDir, listBackups, pruneBackups,
   readCache, writeCache, cachePath, normalizeFeed,
   checkForUpdate, applyUpdate, rollbackTo,

@@ -386,6 +386,47 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     'api=' + (apiUpd && apiUpd.currentVersion) + ' pkg=' + pkgVer);
   ok(apiUpd && Array.isArray(apiUpd.feeds) && apiUpd.feeds.length >= 1, 'HTTP 回显生效的更新源');
 
+  // ── P0-1 回归钉：更新包带一层顶层目录前缀 ──────────────────────────────────
+  //    踩过（2026-10-16 审计）：release 包由 `git archive --prefix=workbuddy-wallpaper/` 打出，
+  //    实测 87/87 条目都带这个顶层前缀、根下没有 package.json；而 applyUpdate 原本直接读
+  //    `staging/package.json` → 冒烟校验必抛「包内版本(undefined) 与目标版本(x) 不一致」
+  //    ⇒ **用户点「立即更新」100% 失败**。
+  //    ⚠️ 为什么之前没测出：本地 e2e 用的是**自造的无前缀合成 zip** ⇒ 假绿。
+  //       教训：合成样本只能验分支，不能验协议对接；真包验证见 `_tmp/e2e-apply-realzip.js`。
+  {
+    const er = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-er-'));
+    const mk = (p, s) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, s); };
+
+    mk(path.join(er, 'plain', 'package.json'), '{"version":"1.0.0"}');
+    ok(upd.effectiveRoot(path.join(er, 'plain')) === path.join(er, 'plain'),
+      '有效根：根下直接有 package.json → 用根');
+
+    mk(path.join(er, 'pref', 'workbuddy-wallpaper', 'package.json'), '{"version":"1.0.0"}');
+    ok(upd.effectiveRoot(path.join(er, 'pref')) === path.join(er, 'pref', 'workbuddy-wallpaper'),
+      '有效根：单层顶层目录前缀 → 下沉一层（发布包就是这种）');
+
+    fs.mkdirSync(path.join(er, 'two', 'd1'), { recursive: true });
+    fs.mkdirSync(path.join(er, 'two', 'd2'), { recursive: true });
+    mk(path.join(er, 'two', 'd1', 'package.json'), '{"version":"1.0.0"}');
+    ok(upd.effectiveRoot(path.join(er, 'two')) === path.join(er, 'two'),
+      '有效根：多个子目录 → 用根（交给冒烟校验报错，不猜）');
+
+    mk(path.join(er, 'lonely', 'x', 'readme.md'), 'x');
+    ok(upd.effectiveRoot(path.join(er, 'lonely')) === path.join(er, 'lonely'),
+      '有效根：单目录里没有 package.json → 用根');
+
+    // 结构钉：冒烟校验与覆盖都必须走「有效根」，不能再直接摸解压目录根
+    const updSrc = readT('core/update.js');
+    ok(/readJsonSafe\(\s*path\.join\(root,\s*'package\.json'\)/.test(updSrc),
+      'applyUpdate 的包内版本校验读的是 root（不是解压目录根）');
+    ok(!/readJsonSafe\(\s*path\.join\(staging,\s*'package\.json'\)/.test(updSrc),
+      '已经不再直接读 staging/package.json（那就是 v1.2.0 的死路）');
+    ok(/syncTree\(\s*root,\s*targetDir\s*\)/.test(updSrc),
+      '覆盖同步从有效根开始（syncTree(root, targetDir)）');
+
+    upd.removeTree(er);
+  }
+
   server.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
   process.stdout.write('\n通过 ' + pass + ' / 失败 ' + fail + '\n');
