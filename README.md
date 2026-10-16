@@ -211,7 +211,8 @@ node scripts/companion.js --stop-service         # 手动停服务
 ```
 
 feed 就是一个静态 JSON：`latest` / `minSupported` / `notes` / `assets.zip{url, mirrors, size, sha256}`。
-发版时由 `node scripts/release-feed.js` 生成（它同时把更新包镜像进 `landing/`，供静态站托管）。
+发版时由 `node scripts/release-feed.js` 生成（默认从 GitHub Release 取那份正式 zip 来算 sha256，
+并把**同一份字节**镜像进 `landing/` 供静态站托管 —— 两个下载源必须字节相同，sha256 才对两边都成立）。
 
 ## 数据目录
 

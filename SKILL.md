@@ -104,14 +104,23 @@ node scripts/install.js --uninstall  # 卸载（停服务 + 撤销自启 + 删�
 **发新版时按这个顺序做**（发布与部署必须分开 —— tag 推出去不可回滚）：
 
 ```bash
-git archive --format=zip --prefix=workbuddy-wallpaper/ -o dist/workbuddy-wallpaper.zip HEAD
+# ① 先推 tag，让 CI 产出正式交付物（zip + exe 挂在 Release 上）
+git tag vX.Y.Z && git push origin main vX.Y.Z
+
+# ② 等 release 工作流跑完，**从 Release 取那份 zip** 生成 feed
 node scripts/release-feed.js --min-supported <最低支持版本> --notes-file _tmp/release-notes.md
+#   默认就是 --from-release vX.Y.Z（会调 gh release download）
 #   ① 校验包内 package.json 版本与要发布的一致（防串包）
 #   ② 算 sha256/size 写进 landing/version.json
-#   ③ 把更新包镜像到 landing/（国内直连的主下载源）
-git tag vX.Y.Z && git push origin main vX.Y.Z        # 触发 release.yml 出 zip + exe
-# ④ 再单独部署 landing/ 到静态站，核对 /version.json 可访问且 sha256 一致
+#   ③ 把**同一份字节**镜像到 landing/（国内直连的主下载源）
+
+# ③ 单独部署 landing/ 到静态站，核对 /version.json 可访问、zip 的 sha256 与 feed 一致
 ```
+
+> ⚠️ **别用本地 `git archive` 打的包生成 feed**。`git archive` 的 zip **不是跨环境字节确定的** ——
+> 实测同一提交，本地与 CI 差 1 个字节、sha256 完全不同。用本地包算 sha256 的话，
+> 走 GitHub 兜底源的用户会校验失败（报错明确、不会装坏，但兜底源等于废了）。
+> 要真用本地包就显式 `--zip`，脚本会大声警告。
 
 **本地试更新**：把 `<数据目录>/update.json` 的 `feeds` 指到一个本地 HTTP 假源，
 或在面板上一路点到「立即更新」。`WBWP_UPDATE_OFF=1` 可整体关掉检查。
