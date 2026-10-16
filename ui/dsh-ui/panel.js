@@ -685,6 +685,21 @@ function wallpaperPanel(payload) {
       tabs[i].classList.toggle('wdw-on', on);
       tabs[i].setAttribute('aria-selected', String(on));
     }
+    // 「关于」页签的小红点：必须在这里同步。
+    // ⚠️ 页签按钮是骨架里**一次性**建好的（build()），paint() 只重绘 body ——
+    //    所以只在 build() 里画红点的话，更新状态变化永远不会反映到页签上（实测踩过）。
+    var aboutTab = null;
+    for (var k = 0; k < tabs.length; k++) if (tabs[k].getAttribute('data-tab') === 'about') aboutTab = tabs[k];
+    if (aboutTab) {
+      var want = !!(st.upd && st.upd.hasUpdate);
+      var existDot = aboutTab.querySelector('.p-dot');
+      if (want && !existDot) {
+        var dot = document.createElement('i'); dot.className = 'p-dot';
+        aboutTab.appendChild(dot);
+      } else if (!want && existDot) {
+        try { existDot.remove(); } catch (_) {}
+      }
+    }
     el.querySelector('#wdw-panel-body').innerHTML = paneHtml();
     movePill(el);
   }
