@@ -485,10 +485,25 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '★ feed 的**主源**地址不是压缩包后缀（静态站会 403），实为 ' + lv.assets.zip.url.split('/').pop());
     ok((lv.assets.zip.mirrors || []).every((u) => /^https:\/\//.test(u)),
       'feed 的兜底源都是 https');
-    ok(fs.existsSync(path.join(ROOT, 'landing', path.basename(lv.assets.zip.url))),
-      '主源指向的那个镜像文件确实在 landing/ 里（否则部署后就是 404）');
     ok(Number(lv.assets.zip.size) > 0 && /^[0-9a-f]{64}$/.test(String(lv.assets.zip.sha256)),
       'feed 里带了 size 与 64 位 sha256');
+
+    // 镜像文件名必须与版本对应（这条不依赖产物，CI 里也能验）
+    const mirrorName = path.basename(lv.assets.zip.url);
+    ok(mirrorName === 'workbuddy-wallpaper-' + lv.latest + '.bin',
+      '主源文件名 = workbuddy-wallpaper-<latest>.bin（实为 ' + mirrorName + '）');
+
+    // ⚠️ 镜像文件本身是**构建产物**（landing/.gitignore 排除）→ 干净检出（CI）里必然不存在。
+    //    所以这里只做**条件式**强校验：本地有就逐字节核对，没有就明确跳过、交给线上守门。
+    //    （第一版写成无条件断言"文件必须在"，CI 四个矩阵全红 —— 断言自己写错了。）
+    const mirrorPath = path.join(ROOT, 'landing', mirrorName);
+    if (fs.existsSync(mirrorPath)) {
+      const got = require('crypto').createHash('sha256').update(fs.readFileSync(mirrorPath)).digest('hex');
+      ok(got === String(lv.assets.zip.sha256),
+        '本地镜像文件的 sha256 == feed.sha256');
+    } else {
+      process.stdout.write('  · 镜像文件不在本地（构建产物，未入 git）→ 这条由 verify-live 在线上把关\n');
+    }
 
     const rf = readT('scripts/release-feed.js');
     ok(/MIRROR_NAME/.test(rf) && /test\(MIRROR_NAME\)/.test(rf),
