@@ -13,6 +13,7 @@ const ROOT = path.resolve(__dirname, '..');
 const { start } = require(path.join(ROOT, 'server', 'standalone.js'));
 const dshUI = require(path.join(ROOT, 'ui', 'dsh-ui', 'index.js'));
 const bg = require(path.join(ROOT, 'ui', 'background.js'));
+const themeCss = require(path.join(ROOT, 'core', 'theme-css.js'));
 const { seedWallpapers } = require('./server.js');
 
 let pass = 0, fail = 0;
@@ -196,6 +197,34 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   ok(!/function\s+promptYesNo\s*\(/.test(installSrc), 'install.js 里没有交互提问函数（会把隐藏运行的卸载器挂死）');
   ok(!/readSync\(\s*0\s*,/.test(installSrc), 'install.js 里没有对 stdin 的同步读（会永久阻塞）');
   ok(installMod.uninstall.length >= 1, 'uninstall(purgeData) 接受参数：删数据必须显式 --purge-data');
+
+  // ── [11] 背景层特异性：不能被同机第二套注入压掉（2026-10-16 事故回归）────
+  // 起因：本机同时跑着 WorkDaddy 的 daemon（127.0.0.1:47832），它经**同一个 CDP 9222**
+  //   往 WorkBuddy 窗口注入自己的 `#wbs-theme-style`（131KB），其中也给 `#root` 挂
+  //   background-image：90deg 40% 左渐暗 + 180deg 底部渐暗 + 一张内嵌 base64 壁纸。
+  //   我们那条 `#root{background:...!important}` 与它**同优先级 (1,0,0)、同样 !important**
+  //   → 纯靠「谁后注入谁赢」，而注入顺序取决于两个服务谁先起来 → **偶发**。
+  //   实测表现：整张场景壁纸被盖成「偏蓝 + 底部山脉」，用户看到的就是「壁纸没了」。
+  // 修法：`#root` / `html,body` 一律挂 `:not(#wdw-noop)` 抬到 (1,1,0)，不看顺序稳赢。
+  process.stdout.write('\n[11] 背景层特异性（不被同机第二套注入压掉）\n');
+  const cssFor = (theme) => {
+    const t = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-css-'));
+    const td = path.join(t, 'themes', 'standalone');
+    fs.mkdirSync(td, { recursive: true });
+    fs.writeFileSync(path.join(td, String(theme.image)), Buffer.from('x'));
+    const out = themeCss.resolveBackgroundAssets({
+      theme, id: 'standalone', themesDir: path.join(t, 'themes'), port, dataDir: t, log: () => {},
+    });
+    fs.rmSync(t, { recursive: true, force: true });
+    return out.bgCssStr || '';
+  };
+  const sceneCss = cssFor({ image: 'background.pkg', weId: '3345659324' });
+  const imgCss = cssFor({ image: 'background.webp' });
+  ok(sceneCss.indexOf('#root:not(#wdw-noop){background:') >= 0, '场景壁纸：#root 带 :not(#wdw-noop) 特异性提升');
+  ok(imgCss.indexOf('#root:not(#wdw-noop){background:') >= 0, '图片壁纸：#root 同样带特异性提升');
+  ok(!/#root\{background/.test(sceneCss), '没有低特异性的裸 `#root{background` 残留（那会输给同优先级规则）');
+  ok(sceneCss.indexOf('html:not(#wdw-noop),body:not(#wdw-noop)') >= 0, 'html/body 也一并抬了特异性');
+  ok(String(dshUI.CHROME_CSS).indexOf('#root:not(#wdw-noop){background-image:none') >= 0, 'dsh-ui 的 #root 兜底规则同样抬了特异性');
 
   server.close();
   fs.rmSync(dataDir, { recursive: true, force: true });

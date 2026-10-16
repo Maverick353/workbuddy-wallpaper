@@ -63,7 +63,9 @@ const CHROME_CSS = [
   // （无 !important）→ 本规则带 !important 即稳赢（试算实测 bg→rgba(0,0,0,0)）。
   // 只改容器、不动 .workbuddy-window-control-button 本身，保留按钮自身的 hover 反馈与点击。
   '#workbuddy-window-controls-container,#workbuddy-window-controls-container .workbuddy-window-controls,.workbuddy-window-controls{background:transparent !important;background-color:transparent !important;background-image:none !important;box-shadow:none !important;border-color:transparent !important;}',
-  '#root{background-image:none !important;}',
+  // `:not(#wdw-noop)` 抬特异性：同机旧壁纸注入（WorkDaddy daemon 的 #wbs-theme-style）也挂在
+  // `#root` 上，同优先级时纯看注入先后 → 会偶发把我们的壁纸盖掉（2026-10-16 实测）。
+  '#root:not(#wdw-noop){background-image:none !important;}',
   // 会话侧栏：**回退为原始贴边模式**（2026-10-13 用户要求撤掉「悬浮岛」）。
   // 仅保留「透明 + 让壁纸透出」；宽高不设，交给宿主自己的内联值。
   // ⚠️ 必须同时去掉宿主的 backdrop-filter（blur(18px) saturate(1.15)）：实测（bisect）

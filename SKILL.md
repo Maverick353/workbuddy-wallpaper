@@ -4,7 +4,7 @@ description: 壁纸引擎与注入式 UI 技能（workbuddy-wallpaper）—— �
 description_zh: 壁纸引擎与注入式 UI（玻璃拟态面板 + 拉绳吉祥物；自定义/工坊壁纸、场景实时渲染、文字颜色与字体切换）
 description_en: Wallpaper engine with an injected glassmorphism UI for WorkBuddy — custom and Steam Workshop wallpapers, live scene rendering, and app-wide text color/font control.
 license: AGPL-3.0-or-later
-version: 1.1.2
+version: 1.1.3
 agent_created: true
 ---
 

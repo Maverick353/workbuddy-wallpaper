@@ -459,7 +459,7 @@ function wallpaperPanel(payload) {
   function paneAbout() {
     return '<div class="p-pane">'
       + '<div class="p-sec"><span class="p-sec-t">壁纸引擎</span>'
-      + row('版本', '插件内核 workdaddy.wallpaper', '<span class="p-hint">v1.1.2</span>')
+      + row('版本', '插件内核 workdaddy.wallpaper', '<span class="p-hint">v1.1.3</span>')
       + row('UI 规格', '原创玻璃拟态视觉语言', '<span class="p-hint">rope dock + 5 页签</span>')
       + row('许可', 'AGPL-3.0-or-later', '<span class="p-hint">含 MIT 第三方声明</span>')
       + '</div>'

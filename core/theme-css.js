@@ -93,17 +93,24 @@ function resolveBackgroundAssets(p) {
         //   原因：用户对比后要求「整个页面亮度跟最上面一样」——而 #root 从 y=30 才开始、顶部 30px
         //   本来就不在 #root 内，故只有 #root 上的这些压暗层会让内容区比顶部暗。全部撤掉后
         //   全页亮度一致。若日后需要压暗（提升文字可读性），用「外观」页的均匀蒙版即可。
-        const bgHead = [
-          '#root{background:',
-          'linear-gradient(rgba(0,0,0,' + mask + '),rgba(0,0,0,' + mask + '))',
-        ].join('');
-        // ── 特异性提升（2026-10-14 实测确立）──────────────────────────────────
+        // ── 特异性提升（2026-10-14 实测确立；2026-10-16 补注：X/P 必须声明在 bgHead 之前）──
         // 宿主给自己的容器/文字配了「类选择器 + !important」，我们 (0,2,1) 级的规则**压不住**。
         // 通解：给每条选择器挂 `:not(#不存在id)`，把特异性抬到 (1,0,x)（三连类名亦可，但这里选择器
         // 形态多样，统一用 :not 更省心）。⚠️ 验证时必须**跨任务读值**：同一任务内改完样式立刻
         // getComputedStyle 会返回旧值，会让人误判"没生效"（本文件今天的排查就踩过这个坑）。
         const X = ':not(#wdw-noop)';
         const P = 'body[data-vscode-theme-name] ';
+        // ⚠️ `#root` 必须挂 `:not(#wdw-noop)` 抬特异性（2026-10-16 事故）：
+        //   同机还有一份**旧壁纸注入**（WorkDaddy daemon 的 `#wbs-theme-style`，端口 47832，
+        //   经同一个 CDP 9222 注入），它也给 `#root` 挂 `background-image`（一条 90deg 40% 左渐暗
+        //   + 一条 180deg 底部渐暗 + 一张内嵌 base64 壁纸）。两条规则**同优先级 (1,0,0)、都 !important**
+        //   → 纯靠「谁后注入谁赢」。注入顺序取决于两个服务的启动先后，**今天是随机的**：
+        //   实测 daemon 的 style 排在后面时，我们的场景壁纸被整屏盖成「偏蓝 + 底部山脉」。
+        //   修法：`#root:not(#wdw-noop)` 抬到 (1,1,0)，**不看顺序稳赢**。已实测最坏顺序（插到 head 最前）仍生效。
+        const bgHead = [
+          '#root' + X + '{background:',
+          'linear-gradient(rgba(0,0,0,' + mask + '),rgba(0,0,0,' + mask + '))',
+        ].join('');
         const bgTail = [
           P + '.teams-container' + X + ',' + P + '.teams-container.is-mac' + X + '{background:transparent !important;' + containerBlurCss + '}',
           P + '[data-view-id]' + X + '{background:transparent !important}',
@@ -146,7 +153,7 @@ function resolveBackgroundAssets(p) {
           let bgVer = '0';
           try { const _st = fs.statSync(imgPath); bgVer = Math.round(_st.mtimeMs) + '-' + _st.size; } catch (_) {}
           bgVideoUrl = 'http://127.0.0.1:' + port + '/theme-media/' + encodeURIComponent(safeId) + '/' + encodeURIComponent(path.basename(imgPath)) + '?v=' + bgVer;
-          bgCssStr = bgHead + ' !important;}' + bgTail + 'html,body{background:transparent !important}';
+          bgCssStr = bgHead + ' !important;}' + bgTail + 'html' + X + ',body' + X + '{background:transparent !important}';
         } else if (imgExt2 === '.pkg') {
           // 场景背景：iframe 加载 vendored WebWallGL 渲染页。
           // 渲染器契约（lib/webwallgl 实测）：src 是 mediaBase 下的**目录 token**，
@@ -161,7 +168,7 @@ function resolveBackgroundAssets(p) {
           const fit = o && ['cover', 'contain', 'fill'].indexOf(String(o.fit)) >= 0 ? String(o.fit) : 'cover';
           const mediaBase = 'http://127.0.0.1:' + port + '/wallpaper-engine/scene-files';
           bgSceneUrl = 'http://127.0.0.1:' + port + '/wallpaper-engine/scene-live/index.html?type=scene&src=' + encodeURIComponent(weTok) + '&mediaBase=' + encodeURIComponent(mediaBase) + '&fit=' + fit + '&sceneFps=' + sceneFps + '&muted=' + muted + '&r=' + daemonBoot;
-          bgCssStr = bgHead + ' !important;}' + bgTail + 'html,body{background:transparent !important}';
+          bgCssStr = bgHead + ' !important;}' + bgTail + 'html' + X + ',body' + X + '{background:transparent !important}';
         } else {
           const buf = fs.readFileSync(imgPath);
           const mime = imgExt2 === '.png' ? 'image/png' : imgExt2 === '.webp' ? 'image/webp' : 'image/jpeg';
