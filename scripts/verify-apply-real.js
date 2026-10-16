@@ -228,6 +228,46 @@ const ok = (cond, msg) => { (cond ? pass++ : fail++); console.log((cond ? '  ✓
     '占位物 core 仍是文件（没有被半途改成目录）');
   ok(manifest(target6) === before6, '★ targetDir 与失败前**逐字节一致**（没有留下半新半旧）');
 
+  console.log('\n=== 9. 反向：所有源都不可达 → 明确报错且不动已装文件（V2 场景 2）===');
+  const base7 = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-dead-')); cleanups.push(base7);
+  const target7 = makeOldTree(base7, '1.1.0');
+  const before7 = manifest(target7);
+  let e7 = null;
+  try {
+    await upd.applyUpdate({
+      dataDir: path.join(base7, 'data'), targetDir: target7, version: targetVersion,
+      zip: { url: 'http://127.0.0.1:1/dead.bin', mirrors: ['http://127.0.0.1:1/dead2.bin'], sha256: sha, size: buf.length },
+    });
+  } catch (e) { e7 = e; }
+  ok(!!e7, '所有源都不可达时抛错（而不是静默成功）');
+  ok(manifest(target7) === before7, '★ 目标目录与失败前**逐字节一致**（已装文件未被动过）');
+  ok(!fs.existsSync(path.join(base7, 'data', 'versions', '1.1.0')), '未产生备份目录');
+
+  console.log('\n=== 10. 存在 .stopped（用户已关闭壁纸）时的更新（V2 场景 8）===');
+  const base8 = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-stop-')); cleanups.push(base8);
+  const target8 = makeOldTree(base8, '1.1.0');
+  const data8 = path.join(base8, 'data');
+  fs.mkdirSync(data8, { recursive: true });
+  fs.writeFileSync(path.join(data8, '.stopped'), String(Date.now()));
+  let r8 = null, e8 = null;
+  try {
+    r8 = await upd.applyUpdate({ dataDir: data8, targetDir: target8, version: targetVersion, zip: { url, sha256: sha, size: buf.length } });
+  } catch (e) { e8 = e; }
+  if (e8) console.log('  抛错：' + e8.message);
+  ok(!e8 && !!r8 && r8.ok === true, '点过「关闭壁纸」也能完成更新（只是不拉起服务）');
+  ok(JSON.parse(fs.readFileSync(path.join(target8, 'package.json'), 'utf8')).version === targetVersion, '文件确实更新到 ' + targetVersion);
+  const rr8 = upd.scheduleRestart({ dataDir: data8, delayMs: 1 });
+  ok(rr8 === 'skipped-stopped', 'scheduleRestart 返回 skipped-stopped（不擅自把服务拉起来），实得 ' + rr8);
+  ok(fs.existsSync(path.join(data8, '.stopped')), '.stopped 标记未被误删（用户意图保留）');
+
+  console.log('\n=== 11. 无看门狗时的判定与分支可达（V2 场景 9 的决策点）===');
+  const base9 = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-nowd-')); cleanups.push(base9);
+  ok(upd.watchdogAlive(base9) === false, '空数据目录被判定为"看门狗不在"');
+  const compSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'companion.js'), 'utf8');
+  ok(compSrc.indexOf('--start-detached') >= 0, 'companion.js 提供 --start-detached（无看门狗时用它补一个）');
+  console.log('  ⚠️ 场景 9 的"真的补一个看门狗并恢复服务"不做进程级自动化：会 spawn 真实常驻进程，');
+  console.log('     且 scheduleRestart 会 exit 调用方 —— 留作真机手工观测项。');
+
   srv.close();
   for (const d of cleanups) { try { upd.removeTree(d); } catch (_) {} }
 
