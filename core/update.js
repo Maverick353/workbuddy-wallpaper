@@ -554,7 +554,62 @@ async function checkForUpdate(opts) {
  *   keepBackups
  * @returns {object} { ok, version, from, backup, written, removed, zipSha256, staged }
  */
+/**
+ * 公开入口：先拿单飞锁，再执行真正的更新（P0-5）。
+ *
+ * 为什么需要锁：检查是**定时**触发的（启动后 25s / 每 6h），而「立即更新」是**手动**点的，
+ * 两者完全可能同时进来。没有锁时它们会撞同一个 staging 目录、同一个备份目录、
+ * 同一份缓存文件 → 目录被写坏且原因难查。
+ */
 async function applyUpdate(o) {
+  const opts = o || {};
+  if (!opts.dataDir) throw new Error('applyUpdate 需要 dataDir');
+  const lockFile = acquireUpdateLock(opts.dataDir);
+  try {
+    return await applyUpdateUnlocked(opts);
+  } finally {
+    releaseUpdateLock(lockFile);
+  }
+}
+
+/**
+ * 单飞锁：`<dataDir>/update/.lock`，内容 `{pid, ts}`。
+ * 用 `flag:'wx'` 原子创建；已存在时判断持有者是否还活着、以及是否已超时——
+ * **陈旧锁可被接管**（否则一次崩溃会让更新永久卡死）。
+ */
+function acquireUpdateLock(dataDir, opts) {
+  const dir = path.join(dataDir, 'update');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, '.lock');
+  const staleMs = (opts && opts.staleMs) || 30 * 60 * 1000;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      fs.writeFileSync(file, JSON.stringify({ pid: process.pid, ts: Date.now() }), { flag: 'wx' });
+      return file;
+    } catch (e) {
+      if (!e || e.code !== 'EEXIST') throw e;
+      let info = null;
+      try { info = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) {}
+      const age = info && info.ts ? (Date.now() - info.ts) : Infinity;
+      const alive = info && info.pid ? pidAlive(info.pid) : false;
+      if (alive && age < staleMs) {
+        throw new Error('已有一次更新正在进行（pid ' + info.pid + '，' + Math.round(age / 1000) + 's 前开始），请稍后再试');
+      }
+      try { fs.unlinkSync(file); } catch (_) {}   // 陈旧锁 → 接管
+    }
+  }
+  throw new Error('无法获取更新锁：' + file);
+}
+
+function releaseUpdateLock(file) { try { fs.unlinkSync(file); } catch (_) {} }
+
+/** 进程存活探测（EPERM 也算活着：它在，只是我们无权给它发信号）。 */
+function pidAlive(pid) {
+  try { process.kill(pid, 0); return true; }
+  catch (e) { return !!(e && e.code === 'EPERM'); }
+}
+
+async function applyUpdateUnlocked(o) {
   const opts = o || {};
   const cfg = loadConfig({ pkgRoot: opts.pkgRoot, dataDir: opts.dataDir });
   const targetDir = opts.targetDir || path.resolve(__dirname, '..');
@@ -610,12 +665,33 @@ async function applyUpdate(o) {
   }
 
   // ⑤ 同步覆盖（从**有效根**开始，不是解压目录根）
-  const sync = syncTree(root, targetDir);
+  //
+  // P0-5：覆盖**中途**失败也必须能回到原样。
+  // 原实现只在「同步成功、但版本号不对」时回滚；`syncTree` 自己抛错（文件被占用 / 磁盘满 /
+  // 只读 / 路径被同名文件占住）时异常直接冒泡，**没人回滚** → 留下半新半旧的目录，
+  // 而且下次启动就是坏的、用户无从恢复。
+  const rollbackTo = (why) => {
+    if (!backup) return false;
+    try { syncTree(backup.dir, targetDir); return true; }
+    catch (e2) {
+      throw new Error(why + '；且自动回滚也失败(' + ((e2 && e2.message) || e2) + ')，'
+        + '请手动从备份恢复：' + backup.dir);
+    }
+  };
+
+  let sync = null;
+  try {
+    sync = syncTree(root, targetDir);
+  } catch (e) {
+    const msg = '覆盖过程中失败：' + ((e && e.message) || e);
+    const restored = rollbackTo(msg);
+    throw new Error(msg + (restored ? '（已自动回滚到 ' + from + '）' : '（没有可用备份，未回滚）'));
+  }
+
   const afterPkg = readJsonSafe(path.join(targetDir, 'package.json'), null);
   if (!afterPkg || String(afterPkg.version) !== version) {
-    // 写坏了：自动回滚
-    if (backup) syncTree(backup.dir, targetDir);
-    throw new Error('覆盖后版本校验失败，已回滚到 ' + from);
+    const restored = rollbackTo('覆盖后版本校验失败（期望 ' + version + '，实得 ' + (afterPkg && afterPkg.version) + '）');
+    throw new Error('覆盖后版本校验失败' + (restored ? '，已回滚到 ' + from : '，且没有可用备份'));
   }
   pruneBackups(dataDir, cfg.keepBackups);
 
@@ -669,6 +745,15 @@ function scheduleRestart(o) {
   const opts = o || {};
   const dataDir = opts.dataDir;
   const delayMs = Number.isFinite(Number(opts.delayMs)) ? Number(opts.delayMs) : 1500;
+
+  // P0-6：用户点过「关闭壁纸」（面板会写 `.stopped`）→ **不要擅自把服务拉起来**。
+  // 版本这时已经换好了，等他下次启用时自然生效。
+  // 原实现不看这个标记：要么白等一场（看门狗活着但 companion 拒绝拉起 → 服务一直不回来），
+  // 要么真被拉起来（start-ui 启动时会删掉 `.stopped`）→ 把用户「我关了」的意图抹掉。
+  if (dataDir && fs.existsSync(path.join(dataDir, '.stopped'))) {
+    return 'skipped-stopped';
+  }
+
   const hadWatchdog = watchdogAlive(dataDir);
   if (!hadWatchdog) {
     try {
@@ -693,4 +778,5 @@ module.exports = {
   readCache, writeCache, cachePath, normalizeFeed,
   checkForUpdate, applyUpdate, rollbackTo,
   watchdogAlive, scheduleRestart,
+  acquireUpdateLock, releaseUpdateLock, pidAlive,
 };

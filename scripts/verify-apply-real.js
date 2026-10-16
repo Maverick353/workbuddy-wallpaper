@@ -44,6 +44,22 @@ function makeOldTree(base, version) {
   return t;
 }
 
+/** 目录清单指纹：文件相对路径 + 内容 sha256，排序后拼成一个字符串（用来判断"有没有被动过"）。 */
+function manifest(dir) {
+  const out = [];
+  const walk = (d, base) => {
+    let items = [];
+    try { items = fs.readdirSync(d, { withFileTypes: true }); } catch (_) { return; }
+    for (const it of items) {
+      const abs = path.join(d, it.name);
+      if (it.isDirectory()) walk(abs, base);
+      else { try { out.push(path.relative(base, abs).split(path.sep).join('/') + ':' + sha256(fs.readFileSync(abs))); } catch (_) {} }
+    }
+  };
+  walk(dir, dir);
+  return out.sort().join('\n');
+}
+
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { (cond ? pass++ : fail++); console.log((cond ? '  ✓ ' : '  ✗ ') + msg); };
 
@@ -153,6 +169,64 @@ const ok = (cond, msg) => { (cond ? pass++ : fail++); console.log((cond ? '  ✓
   } else {
     console.log('  （第 3 步没成功，跳过回滚验证）');
   }
+
+  console.log('\n=== 7. 并发单飞锁（P0-5）===');
+  const base4 = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-lock-')); cleanups.push(base4);
+  const d4 = path.join(base4, 'data');
+  const lk = upd.acquireUpdateLock(d4);
+  ok(fs.existsSync(lk), '取锁成功（.lock 已创建）');
+  let lockErr = null;
+  try { upd.acquireUpdateLock(d4); } catch (e) { lockErr = e; }
+  ok(!!lockErr && /正在进行/.test(lockErr.message), '同一 dataDir 第二次取锁被拒绝：' + String(lockErr && lockErr.message).slice(0, 50));
+  upd.releaseUpdateLock(lk);
+  const lk2 = upd.acquireUpdateLock(d4);
+  ok(!!lk2, '释放后可以再次取锁');
+  upd.releaseUpdateLock(lk2);
+
+  const lockPath = path.join(d4, 'update', '.lock');
+  fs.writeFileSync(lockPath, JSON.stringify({ pid: 999999999, ts: Date.now() }));
+  const lk3 = upd.acquireUpdateLock(d4);
+  ok(!!lk3, '陈旧锁（持有者进程不存在）可被接管');
+  upd.releaseUpdateLock(lk3);
+
+  fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, ts: Date.now() - 60 * 60 * 1000 }));
+  const lk4 = upd.acquireUpdateLock(d4);
+  ok(!!lk4, '陈旧锁（超过 staleMs）即使进程还活着也可被接管');
+  upd.releaseUpdateLock(lk4);
+
+  const base5 = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-lock2-')); cleanups.push(base5);
+  const target5 = makeOldTree(base5, '1.1.0');
+  const data5 = path.join(base5, 'data');
+  const arg5 = { dataDir: data5, targetDir: target5, version: targetVersion, zip: { url, sha256: sha, size: buf.length } };
+  // 同步连发：applyUpdate 在第一个 await 之前就同步拿了锁，所以第二次必然撞上锁 —— 确定性。
+  // （早先写成"等 120ms 再发"，结果第一次已经跑完了，测试变成看运气。）
+  const p1 = upd.applyUpdate(arg5);
+  let e5 = null;
+  try { await upd.applyUpdate(arg5); } catch (e) { e5 = e; }
+  ok(!!e5 && /正在进行/.test(e5.message), '真有并发时第二次被锁拒绝（而不是两边一起写）');
+  let r1 = null;
+  try { r1 = await p1; } catch (_) {}
+  ok(!!r1 && r1.ok === true, '第一次照常成功（锁没有误伤正常流程）');
+  ok(!fs.existsSync(path.join(data5, 'update', '.lock')), '结束后锁文件已释放');
+
+  console.log('\n=== 8. 覆盖中途失败 → 自动回滚（P0-5）===');
+  const base6 = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-half-')); cleanups.push(base6);
+  const target6 = makeOldTree(base6, '1.1.0');
+  // 制造必失败：包里 core/ 是目录，这里占一个**同名文件** → mkdirSync 会失败
+  fs.writeFileSync(path.join(target6, 'core'), 'blocker-not-a-dir');
+  fs.writeFileSync(path.join(target6, 'README.md'), 'OLD-README');
+  const before6 = manifest(target6);
+  let e6 = null;
+  try {
+    await upd.applyUpdate({ dataDir: path.join(base6, 'data'), targetDir: target6, version: targetVersion, zip: { url, sha256: sha, size: buf.length } });
+  } catch (e) { e6 = e; }
+  ok(!!e6, '中途失败时抛错（而不是静默成功）');
+  ok(!!e6 && /回滚/.test(e6.message), '报错里说明已回滚：' + String(e6 && e6.message).slice(0, 70));
+  ok(fs.readFileSync(path.join(target6, 'README.md'), 'utf8') === 'OLD-README',
+    '哨兵文件被还原（证明"半个覆盖"被撤销了）');
+  ok(fs.existsSync(path.join(target6, 'core')) && fs.statSync(path.join(target6, 'core')).isFile(),
+    '占位物 core 仍是文件（没有被半途改成目录）');
+  ok(manifest(target6) === before6, '★ targetDir 与失败前**逐字节一致**（没有留下半新半旧）');
 
   srv.close();
   for (const d of cleanups) { try { upd.removeTree(d); } catch (_) {} }

@@ -427,6 +427,51 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     upd.removeTree(er);
   }
 
+  // ── P0-5 单飞锁 + P0-6 尊重「关闭壁纸」────────────────────────────────────
+  //    踩过（2026-10-16 审计）：检查是**定时**触发的、更新是**手动**点的，两者可能同时进来，
+  //    而当时没有任何锁 → 撞同一个 staging / 备份目录 / 缓存文件。
+  //    又：scheduleRestart 原本不看 `.stopped`，用户点过「关闭壁纸」也会被重新拉起。
+  {
+    const lk = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-lock-'));
+    const l1 = upd.acquireUpdateLock(lk);
+    ok(fs.existsSync(l1), '更新锁：能取到锁（.lock 原子创建）');
+    let dup = null;
+    try { upd.acquireUpdateLock(lk); } catch (e) { dup = e; }
+    ok(!!dup && /正在进行/.test(dup.message), '更新锁：同一 dataDir 第二次取锁被拒绝', dup && dup.message);
+    upd.releaseUpdateLock(l1);
+    const l2 = upd.acquireUpdateLock(lk);
+    ok(!!l2, '更新锁：释放后可以再次取到');
+    upd.releaseUpdateLock(l2);
+
+    const lp = path.join(lk, 'update', '.lock');
+    fs.writeFileSync(lp, JSON.stringify({ pid: 999999999, ts: Date.now() }));
+    const l3 = upd.acquireUpdateLock(lk);
+    ok(!!l3, '更新锁：陈旧锁（持有者进程不存在）可被接管');
+    upd.releaseUpdateLock(l3);
+
+    fs.writeFileSync(lp, JSON.stringify({ pid: process.pid, ts: Date.now() - 60 * 60 * 1000 }));
+    const l4 = upd.acquireUpdateLock(lk);
+    ok(!!l4, '更新锁：陈旧锁（超过 staleMs）即使进程活着也可被接管');
+    upd.releaseUpdateLock(l4);
+
+    ok(upd.pidAlive(process.pid) === true, 'pidAlive：当前进程判定为存活');
+    ok(upd.pidAlive(999999999) === false, 'pidAlive：不存在的 pid 判定为不存活');
+
+    // P0-6：`.stopped` 存在时**不得**拉起服务（这一条必须早返回，否则会真的 spawn 一个看门狗）
+    const sd = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-stop-'));
+    fs.writeFileSync(path.join(sd, '.stopped'), 'closed by user');
+    const rr = upd.scheduleRestart({ dataDir: sd, delayMs: 1 });
+    ok(rr === 'skipped-stopped', 'P0-6：用户点过「关闭壁纸」→ scheduleRestart 不拉起服务', String(rr));
+    upd.removeTree(sd);
+
+    const updSrc2 = readT('core/update.js');
+    ok(/acquireUpdateLock\(opts\.dataDir\)/.test(updSrc2), '结构钉：applyUpdate 入口先取单飞锁');
+    ok(/applyUpdateUnlocked/.test(updSrc2), '结构钉：加锁后调用真正的实现（applyUpdateUnlocked）');
+    ok(/\.stopped/.test(updSrc2), '结构钉：scheduleRestart 读了 .stopped');
+
+    upd.removeTree(lk);
+  }
+
   server.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
   process.stdout.write('\n通过 ' + pass + ' / 失败 ' + fail + '\n');
