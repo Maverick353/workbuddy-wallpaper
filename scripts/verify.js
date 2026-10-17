@@ -321,8 +321,40 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   // feed 结构校验
   ok((() => { try { upd.normalizeFeed({ latest: 'x.y' }, 't'); return false; } catch (_) { return true; } })(),
     'normalizeFeed 拒绝非法 latest');
-  const normFeed = upd.normalizeFeed({ latest: 'v1.2.0', assets: { zip: { url: 'u', sha256: 'AB' } } }, 't');
+  const normFeed = upd.normalizeFeed({
+    latest: 'v1.2.0',
+    assets: { zip: { url: 'u', sha256: 'AB', signature: 'SIG', keyId: 'wbwp-2026a' } },
+  }, 't');
   ok(normFeed.latest === '1.2.0' && normFeed.zip.sha256 === 'ab', 'normalizeFeed 规范化版本号与 sha256 大小写');
+  ok(normFeed.zip.signature === 'SIG' && normFeed.zip.keyId === 'wbwp-2026a', 'normalizeFeed 解析出 signature 与 keyId');
+
+  // ── P1-1：feed 三件套必填 ──────────────────────────────────────────────
+  const feedErr = (zip) => {
+    try { upd.normalizeFeed({ latest: '1.2.0', assets: { zip } }, 't'); return ''; } catch (e) { return String(e.message); }
+  };
+  ok(/sha256/.test(feedErr({ url: 'u', signature: 'S', keyId: 'k' })),
+    'P1-1：feed 缺 sha256 → 拒绝（此前是可选项，缺失即跳过完整性校验）');
+  ok(/signature/.test(feedErr({ url: 'u', sha256: 'ab', keyId: 'k' })),
+    'P1-1：feed 缺 signature → 拒绝');
+  ok(/keyId/.test(feedErr({ url: 'u', sha256: 'ab', signature: 'S' })),
+    'P1-1：feed 缺 keyId → 拒绝');
+
+  // ── P1-1：apply 的前置检查（缺签名时不该浪费流量去下载）────────────────
+  const preflightErr = async (zip) => {
+    try {
+      await upd.applyUpdate({ dataDir: path.join(os.tmpdir(), 'wbwp-pf-' + process.pid), targetDir: ct, version: '1.0.0', zip });
+      return '';
+    } catch (e) { return String(e.message); }
+  };
+  ok((await preflightErr({ url: 'http://127.0.0.1:1/x.bin', sha256: 'ab' })).includes('签名'),
+    'P1-1：apply 前置拒绝"缺签名"（不会去下载）');
+  ok((await preflightErr({ url: 'http://127.0.0.1:1/x.bin', sha256: 'ab', signature: 'S' })).includes('keyId'),
+    'P1-1：apply 前置拒绝"缺 keyId"');
+  ok((await preflightErr({ url: 'http://127.0.0.1:1/x.bin', sha256: 'ab', signature: 'S', keyId: 'nope-2030' })).includes('未知的签名密钥'),
+    'P1-1：apply 前置拒绝"keyId 未知"');
+  ok((await preflightErr({ url: 'http://127.0.0.1:1/x.bin', signature: 'S', keyId: upd.UPDATE_PUBKEYS[0].keyId })).includes('sha256'),
+    'P1-1：apply 前置拒绝"缺 sha256"');
+  ok(upd.UPDATE_PUBKEYS.some((k) => k.keyId === 'wbwp-2026a'), '内置公钥数组里有 wbwp-2026a');
 
   // syncTree：覆盖已有 + 新增 + 删除多余 + 清空目录
   const st1 = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-sync-'));

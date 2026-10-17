@@ -53,6 +53,20 @@ const DEFAULTS = {
 
 const FEED_SCHEMA = 1;
 
+// ── 更新包签名公钥（P1-1）────────────────────────────────────────────────────
+/**
+ * 为什么是**数组**而不是单把：轮换钥匙时新旧两把并存 —— 新款客户端同时认两把，
+ * 等用户升上来之后，下一版再把旧的删掉。单把钥匙等于"一换钥匙，所有老客户端全部失效"。
+ * `publicKey` 是 **DER(SPKI) 的 base64**（不是 PEM），省掉头尾与换行。
+ *
+ * 生成/轮换：`node scripts/init-signing-key.js --out <目录> --key-id <id>`
+ * 签发：     `node scripts/sign-release.js --zip <包> --key <私钥> --key-id <id>`
+ * ⚠️ 私钥只在本机，**永远不要提交、也不要放进 CI Secrets** —— 那等于把签名权交给托管方。
+ */
+const UPDATE_PUBKEYS = [
+  { keyId: 'wbwp-2026a', publicKey: 'MCowBQYDK2VwAyEAtRoBG94CxEu31mT7puEKYSlxFvqte03fsxcUhJpn9MY=' },
+];
+
 // ── 版本比对 ────────────────────────────────────────────────────────────────
 /**
  * 解析 semver（宽松）：允许 `v1.2.3`、`1.2`、`1.2.3-beta.1`、`1.2.3+build`。非法返回 null。
@@ -441,6 +455,13 @@ function normalizeFeed(j, source) {
   if (!parseVersion(j.latest)) throw new Error('feed 缺少合法 latest');
   const assets = j.assets && typeof j.assets === 'object' ? j.assets : {};
   const zip = assets.zip && typeof assets.zip === 'object' ? assets.zip : null;
+  // P1-1：sha256 / signature / keyId 三者**都必填**。
+  // 此前 sha256 是可选的，缺失即跳过完整性校验 —— 那等于"根本没有完整性校验"，只是看起来有。
+  if (zip) {
+    if (!zip.sha256) throw new Error('feed 的 assets.zip 缺少 sha256（P1-1 起必填）');
+    if (!zip.signature) throw new Error('feed 的 assets.zip 缺少 signature（P1-1 起必填）');
+    if (!zip.keyId) throw new Error('feed 的 assets.zip 缺少 keyId（无法确定用哪把公钥验签）');
+  }
   // latest / minSupported 一律**去掉前导 v** 再对外给 —— 否则面板会显示成「vv1.2.0」。
   const strip = (s) => String(s).trim().replace(/^v/i, '');
   return {
@@ -456,8 +477,46 @@ function normalizeFeed(j, source) {
       mirrors: Array.isArray(zip.mirrors) ? zip.mirrors.map(String) : [],
       size: Number(zip.size) || 0,
       sha256: zip.sha256 ? String(zip.sha256).toLowerCase() : null,
+      signature: zip.signature ? String(zip.signature) : null,
+      keyId: zip.keyId ? String(zip.keyId) : null,
     } : null,
   };
+}
+
+/**
+ * 校验更新包签名（P1-1）。
+ *
+ * 签名对象 = **包文件的字节**（分离式签名）。理由：`sha256` 必填之后客户端本来就要对整包算一次哈希，
+ * 在同一份字节上验签几乎零额外成本；而"签 feed 文档"要引入 JSON 规范化，序列化差一个空格就全挂。
+ *
+ * ⚠️ Ed25519 **不支持 `createVerify()` 流式**，必须把包整体读进内存（2.6 MB，可接受）。
+ * ⚠️ `keyId` 未知一律拒绝，**绝不"遍历所有公钥挨个试"** —— 那会让轮换形同虚设，
+ *    也把"用哪把钥匙签的"这个信息丢掉（出事时无法判断是哪一代密钥泄露）。
+ *
+ * @param {string} filePath    已下载到本地的包路径
+ * @param {string} signatureB64 feed 里给的 base64 签名
+ * @param {string} keyId       feed 里给的密钥标识
+ * @returns {true}             验签通过
+ * @throws  {Error}            缺签名 / keyId 未知 / 公钥坏 / 签名不匹配
+ */
+function verifySignature(filePath, signatureB64, keyId) {
+  if (!signatureB64) throw new Error('更新包缺少签名（P1-1 起必须验签，拒绝安装）');
+  if (!keyId) throw new Error('更新包缺少 keyId（无法确定用哪把公钥）');
+  const key = UPDATE_PUBKEYS.find((k) => k.keyId === keyId);
+  if (!key) throw new Error('未知的签名密钥 keyId=' + keyId + '（拒绝安装）');
+  let pub;
+  try {
+    pub = crypto.createPublicKey({ key: Buffer.from(key.publicKey, 'base64'), format: 'der', type: 'spki' });
+  } catch (_) {
+    throw new Error('内置公钥无法解析（keyId=' + keyId + '）');
+  }
+  const sig = Buffer.from(String(signatureB64), 'base64');
+  if (!sig.length) throw new Error('签名是空的（拒绝安装）');
+  const data = fs.readFileSync(filePath);
+  let ok = false;
+  try { ok = crypto.verify(null, data, pub, sig); } catch (_) { ok = false; }
+  if (!ok) throw new Error('签名校验失败（keyId=' + keyId + '）—— 包被篡改，或不是用这把钥匙签的');
+  return true;
 }
 
 /**
@@ -620,6 +679,14 @@ async function applyUpdateUnlocked(o) {
   const urls = [zip.url].concat(zip.mirrors || []).filter(Boolean);
   if (!urls.length) throw new Error('feed 没给更新包地址');
 
+  // P1-1 前置检查：签名三件套缺任何一样都不必浪费流量去下载 —— 下了也装不上。
+  if (!zip.sha256) throw new Error('更新包缺少 sha256（P1-1 起必填，拒绝安装）');
+  if (!zip.signature) throw new Error('更新包缺少签名（P1-1 起必须验签，拒绝安装）');
+  if (!zip.keyId) throw new Error('更新包缺少 keyId（无法确定用哪把公钥）');
+  if (!UPDATE_PUBKEYS.some((k) => k.keyId === zip.keyId)) {
+    throw new Error('未知的签名密钥 keyId=' + zip.keyId + '（拒绝安装）');
+  }
+
   const work = path.join(dataDir, 'update');
   const zipPath = path.join(work, 'download', 'wbwp-' + version + '.zip');
   const staging = path.join(work, 'staging', version);
@@ -633,6 +700,9 @@ async function applyUpdateUnlocked(o) {
       dl = await downloadTo(u, zipPath, { timeoutMs: 180000 });
       if (zip.sha256 && dl.sha256 !== zip.sha256) throw new Error('sha256 不符（拿到 ' + dl.sha256.slice(0, 12) + '…）');
       if (zip.size && dl.size !== zip.size) throw new Error('大小不符（拿到 ' + dl.size + '，期望 ' + zip.size + '）');
+      // P1-1：验签。sha256 只能证明"没下坏"，只有签名能证明"这是我们发的"。
+      // 放在**循环内**逐源验，而不是循环之后：某个镜像被投毒时还能自动换下一个源。
+      verifySignature(zipPath, zip.signature, zip.keyId);
       break;
     } catch (e) { dl = null; dlErrors.push(u + ' → ' + ((e && e.message) || e)); }
   }
@@ -777,6 +847,7 @@ module.exports = {
   versionsDir, listBackups, pruneBackups,
   readCache, writeCache, cachePath, normalizeFeed,
   checkForUpdate, applyUpdate, rollbackTo,
+  verifySignature, UPDATE_PUBKEYS,
   watchdogAlive, scheduleRestart,
   acquireUpdateLock, releaseUpdateLock, pidAlive,
 };

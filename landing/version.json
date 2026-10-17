@@ -13,7 +13,9 @@
         "https://github.com/Maverick353/workbuddy-wallpaper/releases/download/v1.2.0/workbuddy-wallpaper.zip"
       ],
       "size": 2717134,
-      "sha256": "07d6918d6713d6b0bb0171ee6876cd75fc63a13437ffcd953a81030000f62c95"
+      "sha256": "07d6918d6713d6b0bb0171ee6876cd75fc63a13437ffcd953a81030000f62c95",
+      "signature": "F5yGSOKu8nb3NInZefiit8dgiutljTDyIhYS5uiSs0+arQBXGLs/+FteHIJ3i90qnKPzcpzmelQrnY0Q8M/QBw==",
+      "keyId": "wbwp-2026a"
     }
   }
 }

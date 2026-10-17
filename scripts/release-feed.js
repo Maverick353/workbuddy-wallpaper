@@ -8,6 +8,13 @@
  *   node scripts/release-feed.js [--from-release v1.2.0] [--version 1.2.0]
  *                               [--min-supported 1.1.0] [--notes "一句话"] [--notes-file x.md]
  *                               [--zip <本地包>] [--no-mirror] [--dry-run]
+ *                               (--signature <b64> | --signature-file <文件>) --key-id <id>
+ *
+ * ⭐ **P1-1 起签名是硬门禁**：没给签名、或签名验不过这份包，一律 `exit 1`。
+ *    绝不生成一个"看起来有更新、点下去必然失败"的 feed —— 新客户端 sha256 与签名都必填。
+ *    正确顺序（先签、再生成 feed）：
+ *      node scripts/sign-release.js --zip <包> --key <私钥> --key-id wbwp-2026a --out _tmp/sig.txt
+ *      node scripts/release-feed.js --from-release v1.2.0 --signature-file _tmp/sig.txt --key-id wbwp-2026a
  *
  * ⭐ **默认从 GitHub Release 拉那份包来生成 feed**（`--from-release`，默认 `v<version>`）。
  *    为什么必须这样：`git archive` 打的 zip **不是跨环境字节确定的** ——
@@ -127,6 +134,40 @@ const buf = fs.readFileSync(zipPath);
 const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
 const size = buf.length;
 
+// ── ②′ 签名（P1-1，硬门禁）──────────────────────────────────────────────────
+// 没签名就不生成 feed：新客户端要求 sha256 + 签名俱全，一份没签名的 feed 会被全部拒绝，
+// 发出去等于"告诉用户有新版本、点下去必然失败"。
+const keyId = arg('--key-id') || process.env.WBWP_SIGN_KEY_ID || '';
+const sigFile = arg('--signature-file');
+const signature = (sigFile
+  ? fs.readFileSync(path.resolve(ROOT, sigFile), 'utf8')
+  : (arg('--signature') || process.env.WBWP_SIGNATURE || '')).trim();
+
+if (!signature) {
+  console.error('拒绝生成 feed：缺少更新包签名。');
+  console.error('  P1-1 起 feed 的 assets.zip 必须有 signature + keyId，否则新客户端一律拒绝安装。');
+  console.error('  先签：node scripts/sign-release.js --zip <包> --key <私钥> --key-id <id> --out _tmp/sig.txt');
+  console.error('  再跑：node scripts/release-feed.js ... --signature-file _tmp/sig.txt --key-id <id>');
+  process.exit(1);
+}
+if (!keyId) {
+  console.error('拒绝生成 feed：给了签名但没给 --key-id（客户端要靠它选公钥）。');
+  process.exit(1);
+}
+if (!update.UPDATE_PUBKEYS.some((k) => k.keyId === keyId)) {
+  console.error('拒绝生成 feed：keyId=' + keyId + ' 不在客户端内置的 UPDATE_PUBKEYS 里。');
+  console.error('  客户端认的 keyId：' + update.UPDATE_PUBKEYS.map((k) => k.keyId).join(', '));
+  process.exit(1);
+}
+// 自检：签名必须对**这份字节**验得过。签了另一份包（例如本地重打、与 Release 字节不同）会在这里被抓住。
+try {
+  update.verifySignature(zipPath, signature, keyId);
+} catch (e) {
+  console.error('拒绝生成 feed：签名与这份包不匹配 —— ' + ((e && e.message) || e));
+  console.error('  （多半是签了另一份包：本地重打的 zip 与 Release 那份字节不同，sha256 都不一样。）');
+  process.exit(1);
+}
+
 // ── ③ 组装 feed ───────────────────────────────────────────────────────────
 const notesFile = arg('--notes-file');
 const notes = notesFile
@@ -135,12 +176,20 @@ const notes = notesFile
 const ghUrl = 'https://github.com/' + REPO_SLUG + '/releases/download/v' + version + '/' + ZIP_NAME;
 const siteBase = 'https://workbuddy-wallpaper.app.workbuddy.host';
 
+// P2-1（幂等）：重跑**同一版本**时保留上一次的 releasedAt。
+// 否则每次生成都刷一个新时间 —— 内容没变、时间变了，既产生无意义 diff，也让人以为发布时间是今天。
+let prevReleasedAt = null;
+try {
+  const prev = JSON.parse(fs.readFileSync(feedPath, 'utf8'));
+  if (String(prev.latest) === version && prev.releasedAt) prevReleasedAt = prev.releasedAt;
+} catch (_) {}
+
 const feed = {
   schema: 1,
   channel: 'stable',
   latest: version,
   minSupported: arg('--min-supported') || null,
-  releasedAt: new Date().toISOString(),
+  releasedAt: prevReleasedAt || new Date().toISOString(),
   url: siteBase + '/',
   notes: notes,
   assets: {
@@ -153,6 +202,10 @@ const feed = {
       mirrors: noMirror ? [] : [ghUrl],
       size: size,
       sha256: sha256,
+      // P1-1：对**这份字节**的分离式 Ed25519 签名（base64）+ 密钥标识。
+      // 客户端：下载 → 核 sha256 → 用 keyId 选公钥验签 → 才解压安装。
+      signature: signature,
+      keyId: keyId,
     },
   },
 };
@@ -160,6 +213,7 @@ const feed = {
 console.log('更新包来源: ' + zipSource);
 console.log('  大小  : ' + size + ' 字节 (' + (size / 1048576).toFixed(2) + ' MB)');
 console.log('  sha256: ' + sha256);
+console.log('  签名  : keyId=' + keyId + '  ' + signature.slice(0, 16) + '…（已用内置公钥自检通过）');
 console.log('  包内版本: ' + innerVersion + '  ✓ 与发布版本一致');
 console.log('主线地址: ' + feed.assets.zip.url);
 console.log('镜像地址: ' + (feed.assets.zip.mirrors[0] || '(无)'));

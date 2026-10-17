@@ -83,6 +83,22 @@ const ok = (cond, msg) => { (cond ? pass++ : fail++); console.log((cond ? '  ✓
     process.exit(1);
   }
 
+  // ── 签名（P1-1）：后续每次 apply 都必须带上，否则连前置检查都过不了 ──
+  // 好签名从 feed 里取（feed 是对外发布的契约），而不是用私钥现签 —— CI/别的机器上没有私钥。
+  let feedLocal = {};
+  try { feedLocal = JSON.parse(fs.readFileSync(path.join(ROOT, 'landing', 'version.json'), 'utf8')); } catch (_) {}
+  const zipMeta = (feedLocal.assets && feedLocal.assets.zip) || {};
+  const goodSig = zipMeta.signature || '';
+  const goodKeyId = zipMeta.keyId || '';
+  console.log('  签名   = ' + (goodSig ? goodKeyId + ' / ' + goodSig.slice(0, 12) + '…' : '(feed 里没有签名)'));
+  if (!goodSig || !goodKeyId) {
+    console.error('landing/version.json 里没有 signature/keyId —— P1-1 起 feed 必须带签名。');
+    console.error('先跑：node scripts/sign-release.js --zip <包> --key <私钥> --key-id <id> --out _tmp/sig.txt');
+    console.error('再跑：node scripts/release-feed.js ... --signature-file _tmp/sig.txt --key-id <id>');
+    process.exit(1);
+  }
+  const withSig = (base) => Object.assign({}, base, { signature: goodSig, keyId: goodKeyId });
+
   console.log('\n=== 1. effectiveRoot 单元 ===');
   const t0 = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-er-'));
   const mk = (p, s) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, s); };
@@ -117,7 +133,7 @@ const ok = (cond, msg) => { (cond ? pass++ : fail++); console.log((cond ? '  ✓
   const dataDir = path.join(base, 'data');
   let r = null, err = null;
   try {
-    r = await upd.applyUpdate({ dataDir, targetDir: target, version: targetVersion, zip: { url, sha256: sha, size: buf.length } });
+    r = await upd.applyUpdate({ dataDir, targetDir: target, version: targetVersion, zip: withSig({ url, sha256: sha, size: buf.length }) });
   } catch (e) { err = e; }
   if (err) console.log('  抛错：' + err.message);
   ok(!!r && r.ok === true, 'applyUpdate 成功（修前必抛「包内版本(undefined) 与目标版本不一致」）');
@@ -141,7 +157,7 @@ const ok = (cond, msg) => { (cond ? pass++ : fail++); console.log((cond ? '  ✓
   const target2 = makeOldTree(base2, '1.1.0');
   let err2 = null;
   try {
-    await upd.applyUpdate({ dataDir: path.join(base2, 'data'), targetDir: target2, version: targetVersion, zip: { url, sha256: 'de'.repeat(32), size: buf.length } });
+    await upd.applyUpdate({ dataDir: path.join(base2, 'data'), targetDir: target2, version: targetVersion, zip: withSig({ url, sha256: 'de'.repeat(32), size: buf.length }) });
   } catch (e) { err2 = e; }
   ok(!!err2 && /sha256/.test(err2.message), '被拒绝且原因是 sha256');
   ok(JSON.parse(fs.readFileSync(path.join(target2, 'package.json'), 'utf8')).version === '1.1.0', '目标目录未被改动，仍是 1.1.0');
@@ -153,7 +169,7 @@ const ok = (cond, msg) => { (cond ? pass++ : fail++); console.log((cond ? '  ✓
   const target3 = makeOldTree(base3, '1.1.0');
   let err3 = null;
   try {
-    await upd.applyUpdate({ dataDir: path.join(base3, 'data'), targetDir: target3, version: '9.9.9', zip: { url, sha256: sha, size: buf.length } });
+    await upd.applyUpdate({ dataDir: path.join(base3, 'data'), targetDir: target3, version: '9.9.9', zip: withSig({ url, sha256: sha, size: buf.length }) });
   } catch (e) { err3 = e; }
   ok(!!err3 && /不一致/.test(err3.message), '被拒绝且原因是版本不一致');
   ok(JSON.parse(fs.readFileSync(path.join(target3, 'package.json'), 'utf8')).version === '1.1.0', '目标目录未被动过');
@@ -197,7 +213,7 @@ const ok = (cond, msg) => { (cond ? pass++ : fail++); console.log((cond ? '  ✓
   const base5 = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-lock2-')); cleanups.push(base5);
   const target5 = makeOldTree(base5, '1.1.0');
   const data5 = path.join(base5, 'data');
-  const arg5 = { dataDir: data5, targetDir: target5, version: targetVersion, zip: { url, sha256: sha, size: buf.length } };
+  const arg5 = { dataDir: data5, targetDir: target5, version: targetVersion, zip: withSig({ url, sha256: sha, size: buf.length }) };
   // 同步连发：applyUpdate 在第一个 await 之前就同步拿了锁，所以第二次必然撞上锁 —— 确定性。
   // （早先写成"等 120ms 再发"，结果第一次已经跑完了，测试变成看运气。）
   const p1 = upd.applyUpdate(arg5);
@@ -218,7 +234,7 @@ const ok = (cond, msg) => { (cond ? pass++ : fail++); console.log((cond ? '  ✓
   const before6 = manifest(target6);
   let e6 = null;
   try {
-    await upd.applyUpdate({ dataDir: path.join(base6, 'data'), targetDir: target6, version: targetVersion, zip: { url, sha256: sha, size: buf.length } });
+    await upd.applyUpdate({ dataDir: path.join(base6, 'data'), targetDir: target6, version: targetVersion, zip: withSig({ url, sha256: sha, size: buf.length }) });
   } catch (e) { e6 = e; }
   ok(!!e6, '中途失败时抛错（而不是静默成功）');
   ok(!!e6 && /回滚/.test(e6.message), '报错里说明已回滚：' + String(e6 && e6.message).slice(0, 70));
@@ -251,7 +267,7 @@ const ok = (cond, msg) => { (cond ? pass++ : fail++); console.log((cond ? '  ✓
   fs.writeFileSync(path.join(data8, '.stopped'), String(Date.now()));
   let r8 = null, e8 = null;
   try {
-    r8 = await upd.applyUpdate({ dataDir: data8, targetDir: target8, version: targetVersion, zip: { url, sha256: sha, size: buf.length } });
+    r8 = await upd.applyUpdate({ dataDir: data8, targetDir: target8, version: targetVersion, zip: withSig({ url, sha256: sha, size: buf.length }) });
   } catch (e) { e8 = e; }
   if (e8) console.log('  抛错：' + e8.message);
   ok(!e8 && !!r8 && r8.ok === true, '点过「关闭壁纸」也能完成更新（只是不拉起服务）');
@@ -267,6 +283,49 @@ const ok = (cond, msg) => { (cond ? pass++ : fail++); console.log((cond ? '  ✓
   ok(compSrc.indexOf('--start-detached') >= 0, 'companion.js 提供 --start-detached（无看门狗时用它补一个）');
   console.log('  ⚠️ 场景 9 的"真的补一个看门狗并恢复服务"不做进程级自动化：会 spawn 真实常驻进程，');
   console.log('     且 scheduleRestart 会 exit 调用方 —— 留作真机手工观测项。');
+
+  console.log('\n=== 12. 签名验签：7 种拒绝情形（P1-1）===');
+  const sigProbe = path.join(os.tmpdir(), 'wbwp-sigprobe-' + process.pid + '.bin');
+  const trySig = (file, sig, kid) => {
+    try { upd.verifySignature(file, sig, kid); return ''; } catch (e) { return String(e.message); }
+  };
+  fs.writeFileSync(sigProbe, buf);
+  ok(trySig(sigProbe, goodSig, goodKeyId) === '', '正例：真实包的签名验得通');
+  ok(trySig(sigProbe, goodSig.slice(0, -6) + 'AAAAAA', goodKeyId) !== '', '② 篡改签名 → 拒绝');
+  ok(trySig(sigProbe, '', goodKeyId).indexOf('缺少签名') >= 0, '③ 缺签名 → 拒绝');
+  ok(trySig(sigProbe, goodSig, 'nope-2030').indexOf('未知的签名密钥') >= 0, '⑥ keyId 未知 → 拒绝');
+  const otherPair = crypto.generateKeyPairSync('ed25519');
+  const otherSig = crypto.sign(null, buf, otherPair.privateKey).toString('base64');
+  ok(trySig(sigProbe, otherSig, goodKeyId) !== '', '⑤ 用另一把钥匙签、keyId 冒充 ' + goodKeyId + ' → 拒绝');
+  const tampered = Buffer.from(buf);
+  tampered[tampered.length - 1] ^= 0xff;
+  fs.writeFileSync(sigProbe, tampered);
+  ok(trySig(sigProbe, goodSig, goodKeyId) !== '', '① 篡改包体（字节变了）→ 连好签名都对不上，拒绝');
+  fs.unlinkSync(sigProbe);
+
+  // ④ 缺 sha256 / ⑦ 签名有效但 feed 的 sha256 不符 —— 走完整 apply 管道，确认两道校验都在
+  const baseA = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-sig-a-')); cleanups.push(baseA);
+  const targetA = makeOldTree(baseA, '1.1.0');
+  const beforeA = manifest(targetA);
+  let eA = null;
+  try {
+    await upd.applyUpdate({
+      dataDir: path.join(baseA, 'data'), targetDir: targetA, version: targetVersion,
+      zip: { url, signature: goodSig, keyId: goodKeyId, size: buf.length },
+    });
+  } catch (e) { eA = e; }
+  ok(!!eA && /sha256/.test(eA.message), '④ 缺 sha256 → 拒绝（即便签名本身有效）');
+  ok(manifest(targetA) === beforeA, '   目标目录未被改动');
+
+  let eB = null;
+  try {
+    await upd.applyUpdate({
+      dataDir: path.join(baseA, 'data'), targetDir: targetA, version: targetVersion,
+      zip: withSig({ url, sha256: 'de'.repeat(32), size: buf.length }),
+    });
+  } catch (e) { eB = e; }
+  ok(!!eB && /sha256/.test(eB.message), '⑦ 签名有效但 feed 的 sha256 与包不符 → 拒绝');
+  ok(manifest(targetA) === beforeA, '   目标目录仍未被改动');
 
   srv.close();
   for (const d of cleanups) { try { upd.removeTree(d); } catch (_) {} }

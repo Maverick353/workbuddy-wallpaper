@@ -6,10 +6,11 @@
  * （feed 从没上线；更新包被静态站 WAF 拦成 403；applyUpdate 对真包 100% 失败）。
  * 三者都是"本地看不出来、只有线上能看出来"的问题 —— 发布后必须有一道自动关卡。
  *
- * 检查六项：
+ * 检查七项：
  *   ① feed 可达且是合法 JSON        ② latest 与本次要发布的版本一致
  *   ③ minSupported ≤ latest         ④ 包 URL 可达，字节数 == feed.size
- *   ⑤ 包 sha256 == feed.sha256      ⑥ **真解压**，包内 package.json 版本 == latest
+ *   ⑤ 包 sha256 == feed.sha256      ⑥ **验签**（Ed25519，keyId 选公钥）
+ *   ⑦ **真解压**，包内 package.json 版本 == latest
  *
  * 用法：
  *   node scripts/verify-live.js                                  # 打线上正式源
@@ -122,7 +123,12 @@ function rebase(url, base) {
     '⑤ sha256 逐字节一致',
     '得到 ' + String(got.sha256).slice(0, 16) + '… 期望 ' + String(zip.sha256 || '').slice(0, 16) + '…');
 
-  // ⑥ 真解压：包内版本必须等于 latest
+  // ⑥ 验签（P1-1）：sha256 只证明"没下坏"，签名才证明"是我们发的"
+  let sigErr = null;
+  try { update.verifySignature(dest, zip.signature, zip.keyId); } catch (e) { sigErr = e; }
+  ok(!sigErr, '⑥ 更新包签名校验通过（keyId=' + (zip.keyId || '未设') + '）', sigErr && sigErr.message);
+
+  // ⑦ 真解压：包内版本必须等于 latest
   let innerVersion = null, innerErr = null;
   try {
     const staging = path.join(tmp, 'x');
@@ -131,9 +137,9 @@ function rebase(url, base) {
     innerVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
     ok(fs.existsSync(path.join(root, 'SKILL.md')), '包结构正常（含 SKILL.md）');
   } catch (e) { innerErr = e; }
-  ok(!!innerVersion, '⑥ 包能真解压并读出 package.json', innerErr && innerErr.message);
+  ok(!!innerVersion, '⑦ 包能真解压并读出 package.json', innerErr && innerErr.message);
   ok(String(innerVersion) === String(feed.latest),
-    '⑥ 包内版本（' + innerVersion + '）== feed.latest（' + feed.latest + '）',
+    '⑦ 包内版本（' + innerVersion + '）== feed.latest（' + feed.latest + '）',
     '对不上就是"用户点更新必然失败"');
 
   update.removeTree(tmp);
