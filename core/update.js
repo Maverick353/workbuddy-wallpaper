@@ -47,8 +47,11 @@ const DEFAULTS = {
   minCheckIntervalSeconds: 300,
   // 保留多少个旧版本备份（用于回滚）
   keepBackups: 3,
-  // 网络超时
+  // 网络超时（feed 请求）
   timeoutMs: 12000,
+  // 更新包下载：单源超时 & 多源累计总时长上限（P1-2）
+  downloadTimeoutMs: 180000,
+  downloadTotalTimeoutMs: 300000,
 };
 
 const FEED_SCHEMA = 1;
@@ -183,13 +186,51 @@ async function httpGetJson(url, opts) {
   throw new Error('重定向过多: ' + url);
 }
 
-/** 下载到文件并算 sha256（流式，避免大文件占内存）。 */
+// ── 下载面加固（P1-2）──────────────────────────────────────────────────────
+/** 除"本轮初始 host"外，允许重定向到的额外主机。不在这份名单里的 host 一律拒绝跳转。 */
+const REDIRECT_HOSTS = ['github.com', 'objects.githubusercontent.com', 'raw.githubusercontent.com'];
+
+/** 体积上限：至少 8 MB，且不小于 feed 声明大小的 4 倍 —— 既留"包以后变大"的余量，又挡住"无限响应"式打爆磁盘。 */
+function maxDownloadBytes(declaredSize) {
+  return Math.max(8 * 1024 * 1024, 4 * (Number(declaredSize) || 0));
+}
+
+/** 是否允许作为下载源：必须 https；仅本机回环允许 http（本地自检用）。 */
+function urlAllowed(u) {
+  const loop = u.hostname === '127.0.0.1' || u.hostname === 'localhost';
+  return u.protocol === 'https:' || (loop && u.protocol === 'http:');
+}
+
+/**
+ * 下载到文件并算 sha256（流式，避免大文件占内存）。
+ *
+ * P1-2 加固三条：
+ *  ① **体积上限** `maxBytes`：超了立即中止并删掉 `.part`。原实现**完全没有上限** ——
+ *     一个"永远不结束"的响应就能把磁盘写满（这正是计划里列的"打爆磁盘"）。
+ *  ② **跳转白名单**：只跟随 https，且目标 host 必须 ∈「初始 host + 固定 GitHub 域」。
+ *     原实现**无条件跟随**，等于把 SSRF / 诱导跳转的口子完全敞开。
+ *  ③ **跳转次数上限**：原实现是无限递归，恶意源可以绕圈耗尽句柄。
+ *
+ * `maxBytes` 不传则不限（保持旧行为，供 verify 脚本的普通读取用）。
+ */
 function downloadTo(url, dest, opts) {
   const o = opts || {};
+  const allowedHosts = Array.isArray(o.allowedHosts) && o.allowedHosts.length
+    ? o.allowedHosts.slice()
+    : (() => {
+        try { return [new URL(url).host].concat(REDIRECT_HOSTS); } catch (_) { return REDIRECT_HOSTS.slice(); }
+      })();
+  return downloadOnce(url, dest, o, allowedHosts, 0);
+}
+
+function downloadOnce(url, dest, o, allowedHosts, depth) {
   return new Promise((resolve, reject) => {
+    if (depth > 5) return reject(new Error('重定向过多（>5 次）: ' + url));
     let u;
     try { u = new URL(url); } catch (e) { return reject(new Error('下载 URL 非法: ' + url)); }
+    if (!urlAllowed(u)) return reject(new Error('拒绝非 https 的下载源: ' + url));
     const mod = u.protocol === 'http:' ? require('http') : require('https');
+    let aborted = false;
     const req = mod.request({
       protocol: u.protocol, hostname: u.hostname, port: u.port || undefined,
       path: u.pathname + u.search, method: 'GET',
@@ -197,27 +238,61 @@ function downloadTo(url, dest, opts) {
     }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
-        return downloadTo(new URL(res.headers.location, url).toString(), dest, o).then(resolve, reject);
+        let next;
+        try { next = new URL(res.headers.location, url); } catch (_) { return reject(new Error('重定向地址非法')); }
+        if (!urlAllowed(next)) return reject(new Error('拒绝跳转到非 https: ' + next.toString()));
+        if (allowedHosts.indexOf(next.host) < 0) {
+          return reject(new Error('拒绝跳转到白名单外的 host: ' + next.host + '（允许：' + allowedHosts.join(', ') + '）'));
+        }
+        return downloadOnce(next.toString(), dest, o, allowedHosts, depth + 1).then(resolve, reject);
       }
       if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
+
+      const maxBytes = Number(o.maxBytes) || 0;
+      const declared = Number(res.headers['content-length']) || 0;
+      if (maxBytes && declared && declared > maxBytes) {
+        res.resume();
+        return reject(new Error('更新包过大：响应声明 ' + declared + ' 字节 > 上限 ' + maxBytes + '，已中止'));
+      }
+
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       const tmp = dest + '.part';
       const out = fs.createWriteStream(tmp);
       const hash = crypto.createHash('sha256');
       let size = 0;
-      res.on('data', (c) => { size += c.length; hash.update(c); });
-      res.on('error', reject);
-      out.on('error', reject);
+      const abort = (msg) => {
+        if (aborted) return;
+        aborted = true;
+        try { res.unpipe(out); } catch (_) {}
+        try { req.destroy(); } catch (_) {}
+        // Windows 上"还开着的文件"删不掉，所以等写流把句柄关掉再删 .part（并留一个兜底超时）
+        const fail = () => { try { fs.unlinkSync(tmp); } catch (_) {} reject(new Error(msg)); };
+        const to = setTimeout(fail, 2000);
+        if (to.unref) to.unref();
+        out.once('close', () => { clearTimeout(to); fail(); });
+        try { out.destroy(); } catch (_) { clearTimeout(to); fail(); }
+      };
+      res.on('data', (c) => {
+        if (aborted) return;
+        size += c.length;
+        if (maxBytes && size > maxBytes) {
+          return abort('更新包过大：已收 ' + size + ' 字节 > 上限 ' + maxBytes + '，已中止并删除临时文件');
+        }
+        hash.update(c);
+      });
+      res.on('error', (e) => abort('下载中断: ' + ((e && e.message) || e)));
+      out.on('error', (e) => abort('写文件失败: ' + ((e && e.message) || e)));
       res.pipe(out);
       out.on('finish', () => {
+        if (aborted) return;
         out.close(() => {
           try { fs.renameSync(tmp, dest); } catch (_) { fs.copyFileSync(tmp, dest); try { fs.unlinkSync(tmp); } catch (__) {} }
           resolve({ size, sha256: hash.digest('hex') });
         });
       });
     });
-    req.setTimeout(o.timeoutMs || 120000, () => req.destroy(new Error('下载超时')));
-    req.on('error', reject);
+    req.setTimeout(o.timeoutMs || 120000, () => req.destroy(new Error('下载超时 ' + (o.timeoutMs || 120000) + 'ms')));
+    req.on('error', (e) => { if (!aborted) reject(e); });
     req.end();
   });
 }
@@ -693,11 +768,22 @@ async function applyUpdateUnlocked(o) {
   removeTree(staging);
 
   // ① 下载（多源依次试）
+  //    P1-2 加固：
+  //    · 单源 180s、**累计总时长 300s** —— 逐源超时挡不住"每个源都慢一点"这种慢性耗尽；
+  //    · 体积上限 = max(8MB, 4×feed.size)，超了立即中止并删临时文件 —— 不给"无限响应"打爆磁盘的机会。
   const dlErrors = [];
   let dl = null;
+  const dlStart = Date.now();
+  const totalMs = Number(cfg.downloadTotalTimeoutMs) || 300000;
+  const perSourceMs = Number(cfg.downloadTimeoutMs) || 180000;
+  const maxBytes = maxDownloadBytes(zip.size);
   for (const u of urls) {
+    if (Date.now() - dlStart > totalMs) {
+      dlErrors.push('跳过 ' + u + ' → 累计下载时长已超过 ' + Math.round(totalMs / 1000) + 's 上限，停止换源');
+      break;
+    }
     try {
-      dl = await downloadTo(u, zipPath, { timeoutMs: 180000 });
+      dl = await downloadTo(u, zipPath, { timeoutMs: perSourceMs, maxBytes });
       if (zip.sha256 && dl.sha256 !== zip.sha256) throw new Error('sha256 不符（拿到 ' + dl.sha256.slice(0, 12) + '…）');
       if (zip.size && dl.size !== zip.size) throw new Error('大小不符（拿到 ' + dl.size + '，期望 ' + zip.size + '）');
       // P1-1：验签。sha256 只能证明"没下坏"，只有签名能证明"这是我们发的"。
@@ -841,7 +927,7 @@ function scheduleRestart(o) {
 module.exports = {
   DEFAULTS, FEED_SCHEMA,
   parseVersion, compareVersions, isNewer,
-  loadConfig, httpGetJson, downloadTo,
+  loadConfig, httpGetJson, downloadTo, maxDownloadBytes,
   crc32, safeEntryName, unzipTo,
   walkFiles, walkDirs, syncTree, removeTree, effectiveRoot,
   versionsDir, listBackups, pruneBackups,

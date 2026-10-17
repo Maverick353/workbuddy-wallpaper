@@ -356,6 +356,53 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     'P1-1：apply 前置拒绝"缺 sha256"');
   ok(upd.UPDATE_PUBKEYS.some((k) => k.keyId === 'wbwp-2026a'), '内置公钥数组里有 wbwp-2026a');
 
+  // ── P1-2：下载面加固（体积上限 / 跳转白名单 / 跳转次数 / 非 https）──────
+  const http = require('http');
+  const p2srv = http.createServer((req, res) => {
+    if (req.url === '/big') {
+      res.on('error', () => {});
+      res.writeHead(200, { 'content-type': 'application/octet-stream' });
+      const chunk = Buffer.alloc(64 * 1024, 1);
+      for (let i = 0; i < 40; i++) res.write(chunk);          // 共 2.5 MB
+      return res.end();
+    }
+    if (req.url === '/evil') {
+      res.writeHead(302, { location: 'http://evil.example.com/x.bin' });
+      return res.end();
+    }
+    if (req.url === '/loop') {
+      res.writeHead(302, { location: '/loop' });
+      return res.end();
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise((r) => p2srv.listen(0, '127.0.0.1', r));
+  const p2base = 'http://127.0.0.1:' + p2srv.address().port;
+  const p2dest = path.join(os.tmpdir(), 'wbwp-p2-' + process.pid + '.bin');
+
+  let eBig = null;
+  try { await upd.downloadTo(p2base + '/big', p2dest, { maxBytes: 512 * 1024 }); } catch (e) { eBig = e; }
+  ok(!!eBig && /过大/.test(eBig.message), 'P1-2：超过体积上限 → 中止下载');
+  ok(!fs.existsSync(p2dest), 'P1-2：中止后没有生成目标文件');
+  ok(!fs.existsSync(p2dest + '.part'), 'P1-2：中止后 .part 临时文件已删除（Windows 句柄已关）');
+
+  let eEvil = null;
+  try { await upd.downloadTo(p2base + '/evil', p2dest, {}); } catch (e) { eEvil = e; }
+  ok(!!eEvil && /白名单外的 host|非 https/.test(eEvil.message), 'P1-2：跳转到白名单外 host → 拒绝');
+
+  let eLoop = null;
+  try { await upd.downloadTo(p2base + '/loop', p2dest, {}); } catch (e) { eLoop = e; }
+  ok(!!eLoop && /重定向过多/.test(eLoop.message), 'P1-2：重定向绕圈 → 拒绝（原来是无限递归）');
+
+  let eHttp = null;
+  try { await upd.downloadTo('http://example.com/x.bin', p2dest, {}); } catch (e) { eHttp = e; }
+  ok(!!eHttp && /非 https/.test(eHttp.message), 'P1-2：非 https 的下载源 → 拒绝（不会真的发请求）');
+
+  ok(upd.maxDownloadBytes(0) === 8 * 1024 * 1024, 'P1-2：体积上限下限 = 8 MB');
+  ok(upd.maxDownloadBytes(3 * 1024 * 1024) === 12 * 1024 * 1024, 'P1-2：体积上限 = 4×feed.size（当它 > 8MB 时）');
+  p2srv.close();
+
   // syncTree：覆盖已有 + 新增 + 删除多余 + 清空目录
   const st1 = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-sync-'));
   const sSrc = path.join(st1, 'src'), sDst = path.join(st1, 'dst');
