@@ -516,11 +516,13 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   const procx = require('../core/proc.js');
   ok(procx.pidAlive(process.pid) === true && procx.nodePidAlive(process.pid) === true,
     'proc：当前 node 进程被判定为"我们的进程"');
-  // PID 4 是 Windows 的 System 进程：**活着，但不是我们的** —— 正是 pid 回收事故的形态
-  ok(procx.pidAlive(4) === true && procx.nodePidAlive(4) === false,
-    'proc：活着的非 node 进程（PID 4 System）不被误判为我们的进程');
-  ok(procx.imageName(4) !== null && procx.imageName(4) !== 'node.exe',
-    'proc：imageName 能读出映像名（实得 ' + procx.imageName(4) + '）');
+  // 反例要选一个「**活着、但不是 node**」的进程 —— 正是 pid 回收事故的形态。
+  // Windows：PID 4 = System（永远在）；POSIX：父进程（shell，不是 node；CI 上 /proc/4 不一定可读）。
+  const otherPid = procx.IS_WIN ? 4 : process.ppid;
+  ok(procx.pidAlive(otherPid) === true && procx.nodePidAlive(otherPid) === false,
+    'proc：活着的非 node 进程（pid=' + otherPid + '）不被误判为我们的进程');
+  ok(procx.imageName(otherPid) !== null && !/^node(js)?(\.exe)?$/.test(String(procx.imageName(otherPid))),
+    'proc：imageName 能读出映像名（实得 ' + procx.imageName(otherPid) + '）');
   ok(compSrc.includes('HB_STALE_MS') && compSrc.includes('touchHeartbeat()'),
     '结构钉：看门狗锁判活加了心跳（node.exe + 心跳 < 90s）');
   ok(!compSrc.includes('pid && pidAlive(pid)'),
