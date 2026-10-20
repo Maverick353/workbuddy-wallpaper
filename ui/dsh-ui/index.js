@@ -259,9 +259,9 @@ function fontCode() {
 
 /**
  * 生成可注入代码（自执行表达式序列）。
- * @param {{ apiBase?: string, art?: string|null, hostApi?: boolean }} [opts]
- *   apiBase 独立环境的内核地址；hostApi=true 时面板优先用宿主闭包的 api()（自带鉴权）；
- *   art 传 undefined 用内置立绘，传 null 强制走矢量形象。
+ * @param {{ apiBase?: string, apiToken?: string, art?: string|null, hostApi?: boolean }} [opts]
+ *   apiBase 独立环境的内核地址；apiToken 受保护接口（更新/关机）要带的本地令牌；
+ *   hostApi=true 时面板优先用宿主闭包的 api()（自带鉴权）；art 传 undefined 用内置立绘，传 null 强制走矢量形象。
  */
 function dshUIExpression(opts) {
   const o = opts || {};
@@ -270,6 +270,8 @@ function dshUIExpression(opts) {
   const ropeExpr = rope.ropeBuddyExpression(art ? { art } : {});
   const panelOpts = {};
   if (o.apiBase) panelOpts.apiBase = o.apiBase;
+  // P1-3：令牌与 apiBase 走同一条注入路径。面板拿不到它 ⇒ 更新/关机接口一律 401。
+  if (o.apiToken) panelOpts.apiToken = o.apiToken;
   if (o.hostApi) panelOpts.hostApi = true;
   const panelExpr = panel.panelExpression(panelOpts);
 

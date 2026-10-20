@@ -213,7 +213,7 @@ function startUpdateLoop(dir) {
 
   const injectAll = async () => {
     if (!session) throw new Error('无 CDP 会话');
-    await session.ev(dshUI.dshUIExpression({ apiBase }));
+    await session.ev(dshUI.dshUIExpression({ apiBase, apiToken: started.apiToken }));
     const id = readCurrentThemeId(dir);
     if (id) {
       try { await session.ev(buildBackgroundExpr(core.store.readThemeJson({ dataDir: dir }, id), id, started.port, dir)); } catch (_) {}

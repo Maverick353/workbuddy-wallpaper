@@ -71,6 +71,14 @@ function wallpaperPanel(payload) {
   // 宿主环境：闭包里存在 api(path, opts)（自带 X-WorkDaddy-Token）。独立环境取不到 → 走 fetch。
   // typeof 对未声明变量安全；payload.hostApi 为假时短路，连 typeof 都不求值。
   var HOST_API = payload.hostApi && typeof api === 'function' ? api : null;
+  // P1-3：受保护接口（/api/update* /api/shutdown）要带的本地令牌，由服务端经注入 payload 送来。
+  // 拿不到它就等于"以匿名身份访问自己的服务" —— 服务会 401，面板更新卡片会显示错误。
+  var TOKEN = payload.apiToken || '';
+  function authHeaders(extra) {
+    var h = extra || {};
+    if (TOKEN) h['x-wbwp-token'] = TOKEN;
+    return h;
+  }
 
   var st = {
     open: false,
@@ -114,16 +122,18 @@ function wallpaperPanel(payload) {
     return !!f[k];
   }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-  /** 统一请求：宿主优先（带鉴权），否则 fetch(apiBase+path)。返回 json|null（失败不抛）。 */
+  /** 统一请求：宿主优先（自带鉴权），否则 fetch(apiBase+path) 且带本地令牌。返回 json|null（失败不抛）。 */
   function req(path, body, method) {
     if (HOST_API) {
       var o = {};
-      if (body) { o.method = method || 'POST'; o.headers = { 'content-type': 'application/json' }; o.body = JSON.stringify(body); }
-      else if (method) { o.method = method; }
+      if (body) { o.method = method || 'POST'; o.headers = authHeaders({ 'content-type': 'application/json' }); o.body = JSON.stringify(body); }
+      else { o.method = method || 'GET'; o.headers = authHeaders(); }
       return HOST_API(path, o).catch(function () { return null; });
     }
-    var opt = body ? { method: method || 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
-      : (method ? { method: method } : undefined);
+    // 注意：GET 也要带令牌（/api/update 就是 GET）—— 代价是多一次预检，服务端已经处理。
+    var opt = body
+      ? { method: method || 'POST', headers: authHeaders({ 'content-type': 'application/json' }), body: JSON.stringify(body) }
+      : { method: method || 'GET', headers: authHeaders() };
     return fetch(API + path, opt).then(function (r) { return r.json(); }).catch(function () { return null; });
   }
 
@@ -841,7 +851,7 @@ function wallpaperPanel(payload) {
             // 关闭壁纸：① 通知服务写 .stopped 标志并退出（companion 据此不再自动拉起）
             //           ② 本地立即拆除注入的 UI/背景层，给用户即时反馈
             if (window.confirm && !window.confirm('关闭壁纸？将停止壁纸服务并移除界面。\n重新启用：再次运行启动脚本即可。')) return;
-            try { fetch(API + '/api/shutdown', { method: 'POST' }).catch(function () {}); } catch (_) {}
+            try { fetch(API + '/api/shutdown', { method: 'POST', headers: authHeaders() }).catch(function () {}); } catch (_) {}
             setTimeout(function () { try { teardownAll(); } catch (_) {} }, 200);
           }
           return;

@@ -10,7 +10,12 @@
  *   node scripts/plugins/wallpaper/server/standalone.js --port 47841
  *   node scripts/plugins/wallpaper/server/standalone.js --port 47841 --data-dir "C:\\tmp\\wdtest"
  *
- * 安全：只监听 127.0.0.1，不做任何外网暴露，也不需要 token。
+ * 安全（P1-3 起）：只监听 127.0.0.1，**并且对更新类 / 关机类接口做「Origin + 本地令牌」双校验**。
+ *   原先是 `Access-Control-Allow-Origin: '*'` + 全部路由无鉴权 —— 你随便逛个网页，它就能对你的
+ *   127.0.0.1 发请求触发一次更新、或者把壁纸关掉。现在：
+ *   · Origin 只回显受信来源（注入面板跑在 file://，Chromium 发的是字面量 "null"）；
+ *   · 受保护路径必须带 `x-wbwp-token`，令牌在 `<dataDir>/.api-token`，经注入 payload 送到面板。
+ *   · Origin 可伪造/可缺失，所以它只是纵深防御，真正的门是令牌。
  * 注意：standalone 不注入 applyTheme，所以 /api/theme-bg 与 /api/we-apply 只会落盘、不会立即应用主题
  *       （applied:false, pending:true）——这正是无 CDP 时的预期行为。
  */
@@ -19,7 +24,53 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { createRoutes } = require('./routes.js');
+
+// ── P1-3：受保护路径与令牌 ──────────────────────────────────────────────────
+/** 需要鉴权的路径前缀（更新类 + 关机类）。其余接口暂不覆盖，见已知问题 KN-2。 */
+const PROTECTED_PREFIXES = ['/api/update', '/api/shutdown'];
+const TOKEN_FILE = '.api-token';
+
+function isProtectedPath(p) {
+  return PROTECTED_PREFIXES.some((x) => p === x || p.startsWith(x + '/'));
+}
+
+function tokenMatches(got, want) {
+  if (!got || !want || got.length !== want.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want)); } catch (_) { return false; }
+}
+
+/**
+ * 读取或生成本地令牌（32 字节 hex）。
+ * 为什么**持久化**而不是每次启动随机生成：面板是注入进页面的，注入不会在服务重启时自动刷新；
+ * 每次换令牌 ⇒ 一重启旧页面全部 401，用户看到的是"面板全是错误"。
+ */
+function loadOrCreateToken(dataDir) {
+  const p = path.join(dataDir, TOKEN_FILE);
+  try {
+    const t = String(fs.readFileSync(p, 'utf8') || '').trim();
+    if (t.length >= 32) return t;
+  } catch (_) {}
+  const t = crypto.randomBytes(32).toString('hex');
+  try { fs.mkdirSync(dataDir, { recursive: true }); fs.writeFileSync(p, t); } catch (_) {}
+  return t;
+}
+
+/**
+ * 这个 Origin 是否可放行。
+ * · 无 Origin（curl / 本机脚本）→ 放行，交给令牌拦；
+ * · `null`（file:// 页面的跨源请求）→ 放行；
+ * · 与服务自身同源 → 放行；
+ * · 其它（浏览器里的任意 https 页面）→ **拒**。
+ */
+function originAllowed(origin, hostHeader) {
+  if (!origin) return true;
+  const o = String(origin).toLowerCase();
+  if (o === 'null') return true;
+  const host = String(hostHeader || '').toLowerCase();
+  return o === 'http://' + host || o === 'https://' + host;
+}
 
 function parseArgs(argv) {
   const out = { port: 47841, host: '127.0.0.1', dataDir: '', weRendererDir: '' };
@@ -62,6 +113,7 @@ function start(options = {}) {
   const args = { ...parseArgs([]), ...options };
   const dataDir = args.dataDir || defaultDataDir();
   const weRendererDir = args.weRendererDir || path.join(dataDir, 'we-renderer');
+  const apiToken = loadOrCreateToken(dataDir);
   const ctx = {
     json,
     readBody,
@@ -70,23 +122,45 @@ function start(options = {}) {
     weRendererDir,
     applyTheme: typeof options.applyTheme === 'function' ? options.applyTheme : null,
     version: options.version || 'standalone',
-    apiToken: '',
+    apiToken,
   };
   const router = createRoutes(ctx);
 
   const server = http.createServer((req, res) => {
-    // CORS：独立服务被 file:// 宿主页面（Electron 渲染页）直接 fetch —— 必须放行跨源，
-    // 否则 POST JSON 的预检（OPTIONS）会失败、应用类接口静默无效（实测踩过）。
-    // 安全性：只监听回环 + 无凭据，本机可信场景。
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'content-type');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
-    if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
     let url;
     try { url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`); } catch (_) {
       res.writeHead(400); return res.end('bad request');
     }
     const p = url.pathname;
+    const origin = req.headers.origin;
+    const allowed = originAllowed(origin, req.headers.host);
+
+    // CORS（P1-3）：只对受信来源回显，不再无条件 '*'。
+    // 原始动机仍然成立：面板跑在 file:// 宿主页里，跨源 fetch 必须放行，否则 POST JSON 的预检就失败。
+    if (allowed) {
+      res.setHeader('Access-Control-Allow-Origin', origin || '*');
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Headers', 'content-type,x-wbwp-token');
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+    }
+    if (req.method === 'OPTIONS') {
+      if (!allowed) { res.writeHead(403); return res.end(); }
+      res.writeHead(204); return res.end();
+    }
+
+    // 受保护路径：Origin 挡"浏览器里的任意网页"，令牌挡"本机任意进程"（Origin 可伪造/可缺失）
+    if (isProtectedPath(p)) {
+      if (!allowed) return json(res, 403, { ok: false, error: 'forbidden origin', origin: String(origin) });
+      const got = String(req.headers['x-wbwp-token'] || '');
+      if (!tokenMatches(got, apiToken)) {
+        return json(res, 401, {
+          ok: false,
+          error: 'missing or invalid token',
+          hint: '受保护接口需带 X-WBWP-Token；令牌见数据目录的 ' + TOKEN_FILE,
+        });
+      }
+    }
+
     if (p === '/') {
       const h = router.health().body;
       return json(res, 200, h);
@@ -109,7 +183,7 @@ function start(options = {}) {
     server.once('error', reject);
     server.listen(args.port, args.host, () => {
       const address = server.address();
-      resolve({ server, port: address.port, host: address.host, dataDir, url: `http://${args.host}:${address.port}/` });
+      resolve({ server, port: address.port, host: address.host, dataDir, apiToken, url: `http://${args.host}:${address.port}/` });
     });
   });
 }

@@ -28,8 +28,10 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-'));
   const seeded = seedWallpapers(dataDir);
   const applied = [];
-  const { server, port } = await start({ port: 47899, dataDir, log: () => {}, applyTheme: async (id) => { applied.push(id); return { ok: true }; } });
+  const { server, port, apiToken } = await start({ port: 47899, dataDir, log: () => {}, applyTheme: async (id) => { applied.push(id); return { ok: true }; } });
   const BASE = 'http://127.0.0.1:' + port;
+  // P1-3：受保护接口（/api/update* /api/shutdown）要带令牌；其它接口不需要
+  const TK = { 'x-wbwp-token': apiToken };
   const J = async (u, o) => (await fetch(u, o)).json();
 
   process.stdout.write('\n[1] 服务与健康\n');
@@ -491,11 +493,39 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   // ⭐ 这条是回归钉：真实服务经 HTTP 报的 currentVersion 必须是 package.json 的版本。
   //    踩过：routes.js 原本直接取 ctx.version，而 standalone 传进来的是插件命名空间
   //    （值就是 "standalone"）→ 版本比对永远判「有更新」，每个用户都会看到升不完的新版本。
-  const apiUpd = await J(BASE + '/api/update');
+  const apiUpd = await J(BASE + '/api/update', { headers: TK });
   ok(apiUpd && apiUpd.ok === true, 'GET /api/update 返回 ok');
   ok(apiUpd && apiUpd.currentVersion === pkgVer,
     'HTTP 报的 currentVersion === package.json 的版本（不是插件命名空间）',
     'api=' + (apiUpd && apiUpd.currentVersion) + ' pkg=' + pkgVer);
+
+  // ── P1-3：本地接口鉴权（令牌 + Origin 双保险）────────────────────────────
+  // 用 http.request 而不是 fetch：浏览器语境里 Origin 是受禁头，fetch 可能把它剥掉；这里必须真设上。
+  const rawReq = (p0, headers, method) => new Promise((resolve) => {
+    const rq = require('http').request(
+      { host: '127.0.0.1', port, path: p0, method: method || 'GET', headers: headers || {} },
+      (rs) => { rs.resume(); resolve({ status: rs.statusCode }); }
+    );
+    rq.on('error', () => resolve({ status: 0 }));
+    rq.end();
+  });
+  ok((await rawReq('/api/update')).status === 401, 'P1-3：不带令牌访问 /api/update → 401（原先完全裸奔）');
+  ok((await rawReq('/api/update', { 'x-wbwp-token': 'bogus-token' })).status === 401, 'P1-3：错误令牌 → 401');
+  ok((await rawReq('/api/update', TK)).status === 200, 'P1-3：带正确令牌 → 200');
+  ok((await rawReq('/api/update', { origin: 'https://evil.example.com', 'x-wbwp-token': apiToken })).status === 403,
+    'P1-3：恶意 Origin（即便令牌正确）→ 403 —— 浏览器里的任意网页被挡在门外');
+  ok((await rawReq('/api/update', { origin: 'null', 'x-wbwp-token': apiToken })).status === 200,
+    'P1-3：file:// 页面的 Origin: null + 正确令牌 → 200（注入面板可用）');
+  ok((await rawReq('/api/update/check', { origin: 'null' }, 'OPTIONS')).status === 204, 'P1-3：受信来源的预检 → 204');
+  ok((await rawReq('/api/update/check', { origin: 'https://evil.example.com' }, 'OPTIONS')).status === 403,
+    'P1-3：恶意来源的预检 → 403');
+  ok((await rawReq('/api/wallpapers')).status === 200, 'P1-3：非受保护接口（/api/wallpapers）不需要令牌，未误伤');
+  ok(fs.existsSync(path.join(dataDir, '.api-token')), 'P1-3：令牌已持久化到 <dataDir>/.api-token（重启不换，页面不会突然 401）');
+  ok(!readT('server/standalone.js').includes("setHeader('Access-Control-Allow-Origin', '*')"),
+    '结构钉：standalone.js 不再无条件 ACAO:*');
+  ok(readT('ui/dsh-ui/panel.js').includes('x-wbwp-token'), '结构钉：面板 req() 带上了 x-wbwp-token');
+  ok(readT('scripts/start-ui.js').includes('apiToken: started.apiToken'),
+    '结构钉：start-ui 注入时把令牌送进 payload');
   ok(apiUpd && Array.isArray(apiUpd.feeds) && apiUpd.feeds.length >= 1, 'HTTP 回显生效的更新源');
 
   // ── P0-1 回归钉：更新包带一层顶层目录前缀 ──────────────────────────────────
