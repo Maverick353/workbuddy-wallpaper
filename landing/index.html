@@ -51,6 +51,33 @@
   </div>
 
   <div class="card">
+    <h2>本站直连下载（国内更快）</h2>
+    <p class="meta" id="dl-ver">正在读取版本信息…</p>
+    <a class="btn" id="dl-bin" href="https://github.com/Maverick353/workbuddy-wallpaper/releases/latest" style="display:none">下载更新包</a>
+    <p class="meta">GitHub 打不开就用这个 —— 本站直连的是<strong>同一份文件</strong>，
+    只是后缀为了绕过静态站对压缩包的拦截改成了 <code>.bin</code>：
+    下载后<strong>把后缀改回 <code>.zip</code></strong> 再解压即可。</p>
+  </div>
+
+  <script>
+  // 版本号与下载地址**从 version.json 读**，不在页面里写死 —— 否则每次发版都要记得改这里，
+  // 而"下载页指向旧版本"是不会报错的静默故障。
+  (function () {
+    function fail() { document.getElementById('dl-ver').textContent = '本站版本信息暂时读不到，请用上面的 GitHub 按钮。'; }
+    fetch('version.json', { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (j) {
+      var z = (j.assets && j.assets.zip) || {};
+      var mb = z.size ? ' · ' + (z.size / 1048576).toFixed(1) + ' MB' : '';
+      document.getElementById('dl-ver').textContent = '当前版本 v' + j.latest + mb;
+      var a = document.getElementById('dl-bin');
+      if (z.url) { a.href = z.url; a.textContent = '下载 v' + j.latest; a.style.display = ''; }
+    }).catch(fail);
+  })();
+  </script>
+
+  <div class="card">
     <h2>安装（三步）</h2>
     <ol>
       <li>下载并<strong>解压</strong>压缩包</li>
@@ -110,7 +137,8 @@
 
   <footer>
     开源项目 · AGPL-3.0-or-later ·
-    <a href="https://github.com/Maverick353/workbuddy-wallpaper">GitHub</a><br>
+    <a href="https://github.com/Maverick353/workbuddy-wallpaper">GitHub</a> ·
+    <a href="version.json">版本信息</a><br>
     演示用的壁纸均来自 Wallpaper Engine 创意工坊，非本项目作品。
   </footer>
 

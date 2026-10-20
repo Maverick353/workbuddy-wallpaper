@@ -5,7 +5,7 @@
 **把壁纸画进 WorkBuddy 窗口** —— 零依赖本地服务 + 注入式玻璃拟态界面
 
 [![CI](https://github.com/Maverick353/workbuddy-wallpaper/actions/workflows/ci.yml/badge.svg)](https://github.com/Maverick353/workbuddy-wallpaper/actions/workflows/ci.yml)
-![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
+![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
 ![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
 
 </div>
@@ -68,7 +68,7 @@
 ### 方式一：`.exe` 安装包（最省事，推荐给不写代码的人）
 
 到 [**Releases**](https://github.com/Maverick353/workbuddy-wallpaper/releases/latest) 下载
-**`workbuddy-wallpaper-setup-1.2.0.exe`** → 双击 → 下一步 → 完成。
+**`workbuddy-wallpaper-setup-1.2.1.exe`** → 双击 → 下一步 → 完成。
 
 装完会自动跑一次配置：找 Node → 装成技能 → 注册开机自启 → **并在后台把服务拉起来（隐藏窗口，不用等下次登录）** → **检查调试端口** →
 没有就提出「帮你改快捷方式」。无需管理员权限（装进 `%LOCALAPPDATA%\Programs\`）。
@@ -273,7 +273,7 @@ POST /api/update/rollback       （从本地备份回滚；{version} 不传则�
 node scripts/verify.js     # 自验证：起临时服务打真实请求（CI 也跑这套）
 ```
 
-- 提交前请确保 `node scripts/verify.js` 全绿（CI 跑 ubuntu + windows × node 20/22）。
+- 提交前请确保 `node scripts/verify.js` 全绿（CI 跑 ubuntu + windows × node 22/24）。
 - **改 UI 代码后必须重启服务**：服务不热加载模块，旧进程会继续注入旧版本。
 - 排查进程生死：以 `<数据目录>/companion.log` 为准，不要只看 `netstat`。
 

@@ -194,6 +194,59 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   ok(readT('SKILL.md').includes('version: ' + pkgVer), 'SKILL.md 的 version 一致');
   ok(readT('STORE.md').includes('`' + pkgVer + '`'), 'STORE.md 的版本一致');
 
+  // ── [9′] P2-2：两处此前**零断言**的版本号（漏改会静默发错版）──────────────
+  // 为什么必须补：其余 7 处改漏了 `verify.js` 立刻红，唯独这两处没有任何东西兜底 ——
+  //   ① `release.yml` 的默认 tag：CI 手动触发时用它去找 Release；写错就打到旧 tag 上，
+  //      出来的包是旧版本的字节，而 workflow 名字却报成功。
+  //   ② `landing/version.json` 的 latest/minSupported：feed 就是靠它告诉客户端"有新版本"。
+  //      它停旧版本 = 发了新包但**没人收到更新通知**（最典型的"发布了却没人升级"）。
+  process.stdout.write('\n[9′] 版本号断言补齐（release.yml / landing feed）\n');
+  // 这里在 [12] 段之前，`upd` 还没定义 —— 单独取一次（Node 的 require 有缓存，不会重复加载）。
+  const updVer = require(path.join(ROOT, 'core', 'update.js'));
+  const relYml = readT('.github/workflows/release.yml');
+  const relDefault = (relYml.match(/default:\s*'([^']+)'/) || [])[1] || null;
+  ok(relDefault === 'v' + pkgVer,
+    'release.yml 的默认 tag == v' + pkgVer + '（否则手动触发会打到旧 tag）',
+    '实际 ' + relDefault);
+
+  let feedJson = null;
+  try { feedJson = JSON.parse(readT('landing/version.json')); } catch (e) {
+    ok(false, 'landing/version.json 可解析', e.message);
+  }
+  if (feedJson) {
+    // ⚠️ 这里**刻意不要求** feed.latest === package.json 的版本。
+    // 开发期本来就该是「代码已升版、feed 还是上一个已发布版本」—— 卡死这个等式会让每次改版前
+    // 都红一片，逼得人加旁路。**发版那一刻的相等**由 `verify-live.js` 的第②项守
+    // （它拿 feed.latest 和 package.json 的版本硬比，非 0 退出即判发布失败）。
+    // 这里守的是另外两件同样致命、却不会自己暴露的事：
+    ok(!feedJson.latest || updVer.compareVersions(String(feedJson.latest), pkgVer) <= 0,
+      'landing/version.json 的 latest 不高于 package.json（feed 不能承诺代码里还没有的版本）',
+      'feed=' + feedJson.latest + ' pkg=' + pkgVer);
+    ok(!feedJson.minSupported || !feedJson.latest ||
+      updVer.compareVersions(String(feedJson.minSupported), String(feedJson.latest)) <= 0,
+      'landing/version.json 的 minSupported ≤ latest（填反会让所有用户被判必须更新）',
+      'min=' + feedJson.minSupported + ' latest=' + feedJson.latest);
+    // 镜像文件必须与 feed 声明同名 —— 三者（feed.latest / 镜像名 / 实际文件）任一错位都是静默故障：
+    // feed 说有更新 → 客户端按镜像名去下 → 404 → 用户看到"更新失败"，却查不出为什么。
+    const z = (feedJson.assets && feedJson.assets.zip) || {};
+    ok(String(z.url || '').endsWith('workbuddy-wallpaper-' + feedJson.latest + '.bin'),
+      'feed 的主源文件名与 latest 对应（workbuddy-wallpaper-<latest>.bin）',
+      String(z.url || '(空)'));
+  }
+
+  // P2-1 的结构钉：发版脚本的 5 道门禁不许被删掉（删了不会有任何测试变红，只会某天静默发错 feed）
+  const feedSrc = readT('scripts/release-feed.js');
+  ok(feedSrc.includes('不能高于 latest('),
+    '结构钉：release-feed 拒绝 minSupported > latest');
+  ok(feedSrc.includes('--min-supported 非法'),
+    '结构钉：release-feed 校验 minSupported 合法性');
+  ok(feedSrc.includes('notes 过长'),
+    '结构钉：release-feed 限制 notes 长度');
+  ok(feedSrc.includes('这是降级') && feedSrc.includes('--allow-downgrade'),
+    '结构钉：release-feed 拒绝把 latest 往下调（降级保护）');
+  ok(feedSrc.includes('产出后自检') && feedSrc.includes('镜像 sha256 与 feed.sha256 不符'),
+    '结构钉：release-feed 写完回读自检（字节数/sha256/验签）');
+
   // ── [10] 卸载路径不允许有交互提问 ─────────────────────────────────────
   // 起因：install.js 的 uninstall() 里原本有个「数据目录要一并删除吗？[y/N]」的交互提问。
   // 卸载器用 `runhidden` 跑 uninstall.cmd，提问窗口看不见、也没人能输入，

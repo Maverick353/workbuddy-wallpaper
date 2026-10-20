@@ -7,7 +7,7 @@
  * 用法：
  *   node scripts/release-feed.js [--from-release v1.2.0] [--version 1.2.0]
  *                               [--min-supported 1.1.0] [--notes "一句话"] [--notes-file x.md]
- *                               [--zip <本地包>] [--no-mirror] [--dry-run]
+ *                               [--zip <本地包>] [--no-mirror] [--dry-run] [--allow-downgrade]
  *                               (--signature <b64> | --signature-file <文件>) --key-id <id>
  *
  * ⭐ **P1-1 起签名是硬门禁**：没给签名、或签名验不过这份包，一律 `exit 1`。
@@ -168,27 +168,56 @@ try {
   process.exit(1);
 }
 
+// ── ②″ P2-1：feed 字段校验（能在本地发现的，就别留到线上让用户发现）─────────
+const minSupported = arg('--min-supported') || null;
+if (minSupported !== null && !update.parseVersion(minSupported)) {
+  console.error('--min-supported 非法：' + minSupported + '（要 x.y.z，可带前导 v）');
+  process.exit(1);
+}
+if (minSupported !== null && update.compareVersions(minSupported, version) > 0) {
+  console.error('--min-supported(' + minSupported + ') 不能高于 latest(' + version + ')。');
+  console.error('  否则客户端会认为「连最新版都不受支持」→ 每次检查都提示必须更新。');
+  process.exit(1);
+}
+
 // ── ③ 组装 feed ───────────────────────────────────────────────────────────
+const NOTES_MAX = 4000;
 const notesFile = arg('--notes-file');
 const notes = notesFile
   ? fs.readFileSync(path.resolve(ROOT, notesFile), 'utf8').trim()
   : (arg('--notes') || '');
+if (notes.length > NOTES_MAX) {
+  console.error('notes 过长：' + notes.length + ' 字符，上限 ' + NOTES_MAX + '。');
+  console.error('  这串会被塞进 feed 显示在面板「关于」页，太长会把面板撑坏 → 请精简后再发。');
+  process.exit(1);
+}
 const ghUrl = 'https://github.com/' + REPO_SLUG + '/releases/download/v' + version + '/' + ZIP_NAME;
 const siteBase = 'https://workbuddy-wallpaper.app.workbuddy.host';
 
 // P2-1（幂等）：重跑**同一版本**时保留上一次的 releasedAt。
 // 否则每次生成都刷一个新时间 —— 内容没变、时间变了，既产生无意义 diff，也让人以为发布时间是今天。
 let prevReleasedAt = null;
+let prevLatest = null;
 try {
   const prev = JSON.parse(fs.readFileSync(feedPath, 'utf8'));
+  if (prev.latest) prevLatest = String(prev.latest);
   if (String(prev.latest) === version && prev.releasedAt) prevReleasedAt = prev.releasedAt;
 } catch (_) {}
+
+// P2-1（降级保护）：不允许把线上 feed 的 latest **往下调**。
+// 客户端用 compareVersions 判 hasUpdate —— latest 变小等于「已是最新版」，老用户永远收不到更新；
+// 而已经升上去的人回不去（回滚是本地备份的事，不是 feed 的事）。这种"手滑打错版本号"必须拦下。
+if (prevLatest && update.compareVersions(version, prevLatest) < 0 && !has('--allow-downgrade')) {
+  console.error('拒绝生成 feed：这是降级（新 latest=' + version + ' < 现有 latest=' + prevLatest + '）。');
+  console.error('  latest 变小会让所有老用户永远收不到更新。确实要降级就显式加 --allow-downgrade。');
+  process.exit(1);
+}
 
 const feed = {
   schema: 1,
   channel: 'stable',
   latest: version,
-  minSupported: arg('--min-supported') || null,
+  minSupported: minSupported,
   releasedAt: prevReleasedAt || new Date().toISOString(),
   url: siteBase + '/',
   notes: notes,
@@ -234,6 +263,46 @@ if (!noMirror) {
   console.log('已镜像更新包 → ' + path.relative(ROOT, dest) + '（与 feed 里 sha256 对应的就是这份字节）');
 }
 if (fetched) update.removeTree(fetched);
+
+// ── ④ P2-1（产出后自检）：把**写下去的东西**读回来再验一遍 ───────────────────
+// 前面的检查都是对"准备写的内容"做的；这一段验的是"磁盘上真实落下的字节"——
+// 能抓住 zip/feed 写坏、镜像文件被截断、copyFileSync 落在别的盘上失败等"写得进去、读不出来"的情况。
+{
+  const problems = [];
+  let back = null;
+  try { back = JSON.parse(fs.readFileSync(feedPath, 'utf8')); }
+  catch (e) { problems.push('feed 读不回来：' + e.message); }
+
+  if (back) {
+    if (String(back.latest) !== version) problems.push('回读 latest=' + back.latest + ' ≠ ' + version);
+    if (String(back.minSupported) !== String(minSupported)) problems.push('回读 minSupported 不一致');
+    if (!back.assets || !back.assets.zip) problems.push('回读缺 assets.zip');
+    else {
+      const z = back.assets.zip;
+      if (!z.signature || !z.keyId) problems.push('回读缺 signature/keyId');
+      if (!noMirror) {
+        const mirror = path.join(landingDir, MIRROR_NAME);
+        if (!fs.existsSync(mirror)) problems.push('镜像文件不存在：' + MIRROR_NAME);
+        else {
+          const mbuf = fs.readFileSync(mirror);
+          const msha = crypto.createHash('sha256').update(mbuf).digest('hex');
+          if (mbuf.length !== Number(z.size)) problems.push('镜像字节数 ' + mbuf.length + ' ≠ feed.size ' + z.size);
+          if (msha !== z.sha256) problems.push('镜像 sha256 与 feed.sha256 不符');
+          try { update.verifySignature(mirror, z.signature, z.keyId); }
+          catch (e) { problems.push('镜像验签失败：' + e.message); }
+        }
+      }
+    }
+  }
+
+  if (problems.length) {
+    console.error('\n❌ 产出后自检未通过（文件已写，但**不可发布**）：');
+    for (const p of problems) console.error('   · ' + p);
+    process.exit(1);
+  }
+  console.log('\n✓ 产出后自检通过：回读 feed 合法 · 镜像字节数与 sha256 与 feed 一致 · 镜像验签通过');
+}
+
 console.log('\n下一步：部署 landing/ 到静态站（发布与部署分开跑），然后**必须**跑一次线上守门：');
 console.log('  node scripts/verify-live.js        # 核对 feed 可读、包可下、sha256 逐字节一致');
 console.log('  只在 ' + siteBase + '/version.json 与 ' + siteBase + '/' + MIRROR_NAME + ' 都验过之后，才算发布完成。');

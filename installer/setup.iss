@@ -9,8 +9,9 @@
 ;  或手动：
 ;      "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" installer\setup.iss
 ;
-;  ⚠️ 当前开发机上**没有装 ISCC**，所以本文件尚未实际编译验证过。
-;     这意味着它是"按规范写好、未冒烟"的状态 —— 第一次构建时请照上面的路径先装 Inno Setup 6。
+;  ⚠️ 本文件由 CI 的 release.yml 在打 tag 时用 ISCC **真实编译**（编译失败 = 发布失败），
+;     所以它不再是"未冒烟"状态；但**本机**没装 ISCC，本地改完只能靠推送 tag / 手动跑
+;     release 工作流来验证 —— 改完请在 CI 上确认 .exe 产物确实生成。
 ;
 ;  设计取向：
 ;    · 装进 %LOCALAPPDATA%\Programs\...（**不需要管理员**，PrivilegesRequired=lowest）
@@ -21,7 +22,7 @@
 ; ============================================================================
 
 #define MyAppName "workbuddy-wallpaper"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.2.1"
 #define MyAppPublisher "Maverick353"
 #define MyAppURL "https://github.com/Maverick353/workbuddy-wallpaper"
 #define MyAppExeName "启动.cmd"
@@ -71,8 +72,11 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; Flags: checkedonce
 
 [Files]
 ; 整包拷进去（排除仓库/开发产物）。注意 renderer\ 是随包的第三方渲染器，必须带上。
+; ⚠️ installer\ 与 landing\ 必须排除：前者是安装脚本本身（装了也没用），
+;    后者是整个下载页 + 2.6MB 更新包镜像（会白白让安装包大一圈）。
+;    计划文档（*计划*.md）也不该进用户机器。
 Source: "..\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; \
-  Excludes: ".git,.git\*,dist\*,dist,_tmp\*,_tmp,.backup-*,.github\*,docs\*,*.log,.gitignore,.gitattributes,推广文案-*.md,优化计划-*.md"
+  Excludes: ".git,.git\*,dist\*,dist,_tmp\*,_tmp,.backup-*,.github\*,docs\*,*.log,.gitignore,.gitattributes,installer,installer\*,landing,landing\*,推广文案-*.md,*计划*.md"
 
 [Icons]
 Name: "{group}\启动 {#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"

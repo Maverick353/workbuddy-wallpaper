@@ -1,7 +1,10 @@
 # SkillHub 上架物料 · workbuddy-wallpaper
 
 > 本文件是「workbuddy-wallpaper」提交到 SkillHub 商店所需的全部材料。
-> 安装包：`dist/workbuddy-wallpaper.zip`（由官方 `package_skill.py` 校验并打包，校验结果 `Skill is valid!`）
+> **两个包不是同一个东西，别混用**：
+> · 面向用户的发布字节 = **GitHub Release 的 `workbuddy-wallpaper.zip`**（由 CI 用 `git archive` 从 tag 打出，feed 里的 sha256 认的就是它）；
+> · 商店提交用的包 = `dist/workbuddy-wallpaper.zip`（用官方 `package_skill.py` 从**同一份源码**重新打包，校验结果 `Skill is valid!`）。
+> 两者内容等价、字节不同（打包器不同），所以**只用后者提交商店，绝不要拿它算 feed 的 sha256**。
 
 ## 商店信息
 
@@ -9,7 +12,7 @@
 |---|---|
 | **展示名（商店里看到的）** | **workbuddy-wallpaper** |
 | 标识（slug / SKILL.md `name`） | `workbuddy-wallpaper` |
-| 版本 | `1.2.0` |
+| 版本 | `1.2.1` |
 | 许可 | AGPL-3.0-or-later |
 | 分类建议 | 效率工具 / 桌面美化 |
 | 仓库/主页 | （可选，如有） |
@@ -58,8 +61,8 @@ A companion watchdog follows WorkBuddy's lifecycle and can auto-start at login.
 **本机没有 SkillHub 的 CLI，也没有发布凭证 —— 我无法代替你提交。** 实际路径：
 
 1. 打开 SkillHub 的开发者/上传入口（网页端），用你的账号登录。
-2. 新建技能，**展示名填「workbuddy-wallpaper」**，标识填 `workbuddy-wallpaper`，版本 `1.2.0`。
-3. 上传安装包 `dist/workbuddy-wallpaper.zip`（内部结构：`workbuddy-wallpaper/SKILL.md` + `scripts/` + `ui/` + `core/` + `server/` + `renderer/` + `assets/`）。
+2. 新建技能，**展示名填「workbuddy-wallpaper」**，标识填 `workbuddy-wallpaper`，版本 `1.2.1`。
+3. 上传安装包 `dist/workbuddy-wallpaper.zip`（**用官方 `package_skill.py` 从当前 tag 的源码重新打包**，不是 Release 那份；内部结构：`workbuddy-wallpaper/SKILL.md` + `scripts/` + `ui/` + `core/` + `server/` + `renderer/` + `assets/`）。
 4. 粘贴上面的中/英简介与描述、示例提示词，选择分类。
 5. 确认许可为 AGPL-3.0-or-later（因代码抽取自 WorkDaddy，**必须**同许可分发），提交审核。
 
@@ -68,7 +71,7 @@ A companion watchdog follows WorkBuddy's lifecycle and can auto-start at login.
 - [x] `quick_validate.py` 通过（`Skill is valid!`）
 - [x] SKILL.md frontmatter：`name` 为 hyphen-case（`workbuddy-wallpaper`）、含 `description` / `description_zh` / `description_en` / `license` / `version`
 - [x] 包内不含 `.git` / `_tmp` / `dist` / `*.log`（由 `scripts/install.js` 的过滤器保证）
-- [x] 自验证套件 21/21（`node scripts/verify.js`）
+- [x] 自验证套件全绿（`node scripts/verify.js`；**断言数随版本增加，以实测输出的"通过 N / 失败 0"为准**，v1.2.1 时为 165）
 - [ ] 页面文案中「官方壁纸库」已在 2026-10-13 移除（当前库页来源 = 自定义 + WE 库）
 - [ ] 上架前建议在一台干净机器上跑一遍 `node scripts/install.js` → `node scripts/start-ui.js`
 
