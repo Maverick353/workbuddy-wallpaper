@@ -109,6 +109,38 @@ function pidAlive(pid) {
   return out.indexOf(String(pid)) >= 0;   // 无匹配时只打印本地化 INFO 行（不含 PID 数字）
 }
 
+/** 取某个 pid 的映像名（小写）；查不到返回 null。 */
+function imageName(pid) {
+  if (!pid || pid <= 0) return null;
+  const out = tasklistOut(['/FI', 'PID eq ' + pid, '/NH', '/FO', 'CSV']);
+  const lines = String(out || '').split(/\r?\n/).filter((l) => l.trim());
+  for (const line of lines) {
+    const m = line.match(/^"([^"]+)","(\d+)"/);
+    if (m && Number(m[2]) === Number(pid)) return m[1].toLowerCase();
+  }
+  return null;                            // 无匹配时只有一行本地化 INFO
+}
+
+/**
+ * 锁里的那个 pid 是不是**我们的看门狗**。
+ *
+ * 为什么不能只用 `pidAlive()`：**Windows 会回收 pid**。
+ * 2026-10-20 实测事故：看门狗死时占用 pid 4316，系统把 4316 回收给了 `svchost.exe`，
+ * 于是之后每次启动都被判定"已有 companion 在跑"直接退出 —— 壁纸静默停机两天，用户只看到"没启动"。
+ * 所以必须再验一条：映像名要是 `node.exe`。
+ * （残余误判只剩"pid 被回收给另一个 node.exe"，概率极低；查不到映像名时保守当作活着，避免重复起。）
+ */
+function companionAlive(pid) {
+  if (!pidAlive(pid)) return false;
+  const img = imageName(pid);
+  if (img === null) return true;
+  if (img !== 'node.exe') {
+    log('锁里的 pid ' + pid + ' 实际是 ' + img + '（pid 已被系统回收）→ 判定为残留锁');
+    return false;
+  }
+  return true;
+}
+
 /** 读 .ui.pid（无效/缺失返回 null）。 */
 function readPidFile() {
   try {
@@ -329,9 +361,9 @@ function stopWatchdogCmd() {
   const pid = (() => { try { return Number((fs.readFileSync(LOCK_FILE, 'utf8') || '').trim()) || 0; } catch (_) { return 0; } })();
   if (!pid) { log('--stop-watchdog：没有 .companion.lock（看门狗未在运行）'); process.exit(0); }
   if (pid === process.pid) { log('--stop-watchdog：锁指向的就是本进程，跳过'); process.exit(0); }
-  if (!pidAlive(pid)) {
+  if (!companionAlive(pid)) {
     try { fs.unlinkSync(LOCK_FILE); } catch (_) {}
-    log('--stop-watchdog：锁里的进程 ' + pid + ' 已不在 → 清理残留锁');
+    log('--stop-watchdog：锁里的进程 ' + pid + ' 不是我们的看门狗（已消失 / pid 被系统回收）→ 只清理残留锁，不动任何进程');
     process.exit(0);
   }
   const r = spawnSync('taskkill', ['/F', '/PID', String(pid)], { windowsHide: true, encoding: 'buffer' });
@@ -402,7 +434,7 @@ function acquireLock() {
   try {
     if (fs.existsSync(LOCK_FILE)) {
       const old = Number((fs.readFileSync(LOCK_FILE, 'utf8') || '').trim());
-      if (old && old !== process.pid && pidAlive(old)) return false;   // 已有一个看门在跑
+      if (old && old !== process.pid && companionAlive(old)) return false;   // 已有一个看门在跑（且确实是 node）
       log('发现失效/残留 lock（pid=' + old + '）→ 接管');
     }
     fs.writeFileSync(LOCK_FILE, String(process.pid));

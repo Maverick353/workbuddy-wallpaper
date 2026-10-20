@@ -444,6 +444,17 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     .every((p) => routesSrc.includes("'" + p + "'")), '四条 /api/update* 路由都在 routes.js');
   const startSrc = readT('scripts/start-ui.js');
   ok(startSrc.includes('startUpdateLoop(dir)') && startSrc.includes('startUpdateLoop'), 'start-ui.js 挂上了更新检查循环');
+
+  // 结构钉：单实例锁必须验「映像名」，不能只看 pid。Windows 会回收 pid ——
+  // 2026-10-20 事故：死掉的看门狗占用的 pid 4316 被 svchost.exe 复用，之后每次启动都判
+  // 「已有 companion 在跑」直接退出，壁纸静默停机两天；而 --stop-watchdog 还会 taskkill 到 svchost。
+  const compSrc = readT('scripts/companion.js');
+  ok(compSrc.includes('function companionAlive(') && compSrc.includes('function imageName('),
+    '结构钉：companion.js 用「映像名」判定看门狗是否真的活着（防 pid 回收）');
+  ok(compSrc.includes('companionAlive(old)') && !compSrc.includes('pidAlive(old)'),
+    '结构钉：acquireLock 用 companionAlive(old)，不再裸用 pidAlive(old)');
+  ok(compSrc.includes('companionAlive(pid)'),
+    '结构钉：stopWatchdogCmd 也走 companionAlive（否则会 taskkill 到被回收 pid 的无关进程）');
   const panelSrc = readT('ui/dsh-ui/panel.js');
   ok(panelSrc.includes("data-act=\"check-update\"") && panelSrc.includes("data-act=\"apply-update\"") &&
     panelSrc.includes("data-act=\"rollback\""), '面板「关于」页有 检查 / 立即更新 / 回滚 三个动作');
