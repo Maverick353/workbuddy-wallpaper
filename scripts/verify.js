@@ -515,7 +515,9 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   // ── 修复计划 D1-D5：pid 回收这一类的全量清扫 ────────────────────────────
   const procx = require('../core/proc.js');
   ok(procx.pidAlive(process.pid) === true && procx.nodePidAlive(process.pid) === true,
-    'proc：当前 node 进程被判定为"我们的进程"');
+    'proc：当前 node 进程被判定为"我们的进程"',
+    'platform=' + process.platform + ' pid=' + process.pid +
+    ' pidAlive=' + procx.pidAlive(process.pid) + ' imageName=' + procx.imageName(process.pid));
   // 反例要选一个「**活着、但不是 node**」的进程 —— 正是 pid 回收事故的形态。
   // Windows：PID 4 = System（永远在）；POSIX：父进程（shell，不是 node；CI 上 /proc/4 不一定可读）。
   const otherPid = procx.IS_WIN ? 4 : process.ppid;

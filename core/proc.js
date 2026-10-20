@@ -57,7 +57,15 @@ function imageName(pid) {
     return null;                          // 无匹配时只有一行本地化 INFO
   }
 
-  // Linux：/proc/<pid>/comm 最省事，且不需要外部命令
+  // Linux：优先 `/proc/<pid>/exe`（可执行文件本身，**不受线程名改写影响**）。
+  // 为什么不用 comm 打头：comm 是"线程名"，进程可以自己改名（Node 在某些平台/版本上
+  // 主线程 comm 并非 `node`）—— 2026-10-20 CI 就是靠这条线索才把"自身判活"修对。
+  try {
+    const exe = fs.readlinkSync('/proc/' + pid + '/exe');
+    const base = String(exe).replace(/\s*\(deleted\)\s*$/, '').split('/').pop();
+    if (base) return base.toLowerCase();
+  } catch (_) {}
+  // 其次 comm（简单、总能读）
   try {
     const s = fs.readFileSync('/proc/' + pid + '/comm', 'utf8').trim();
     if (s) return s.toLowerCase();
@@ -82,8 +90,8 @@ function nodePidAlive(pid) {
   const img = imageName(pid);
   if (img === null) return true;
   if (IS_WIN) return img === 'node.exe';
-  // POSIX 的 comm 一般就是 `node`；Debian 系历史上也有 `nodejs`
-  return img === 'node' || img === 'nodejs';
+  // POSIX：`node` / `nodejs`（Debian 历史命名）/ `node22` 这类带版本后缀的也认
+  return /^node(js)?[\d._-]*$/.test(img);
 }
 
 module.exports = { pidAlive, imageName, nodePidAlive, IS_WIN };
