@@ -449,12 +449,34 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   // 2026-10-20 事故：死掉的看门狗占用的 pid 4316 被 svchost.exe 复用，之后每次启动都判
   // 「已有 companion 在跑」直接退出，壁纸静默停机两天；而 --stop-watchdog 还会 taskkill 到 svchost。
   const compSrc = readT('scripts/companion.js');
-  ok(compSrc.includes('function companionAlive(') && compSrc.includes('function imageName('),
-    '结构钉：companion.js 用「映像名」判定看门狗是否真的活着（防 pid 回收）');
+  ok(compSrc.includes('function companionAlive(') && compSrc.includes('proc.nodePidAlive(') &&
+    readT('core/proc.js').includes('function imageName('),
+    '结构钉：看门狗判活经 core/proc.js 的「映像名」判定（防 pid 回收）');
   ok(compSrc.includes('companionAlive(old)') && !compSrc.includes('pidAlive(old)'),
     '结构钉：acquireLock 用 companionAlive(old)，不再裸用 pidAlive(old)');
   ok(compSrc.includes('companionAlive(pid)'),
     '结构钉：stopWatchdogCmd 也走 companionAlive（否则会 taskkill 到被回收 pid 的无关进程）');
+
+  // ── 修复计划 D1-D5：pid 回收这一类的全量清扫 ────────────────────────────
+  const procx = require('../core/proc.js');
+  ok(procx.pidAlive(process.pid) === true && procx.nodePidAlive(process.pid) === true,
+    'proc：当前 node 进程被判定为"我们的进程"');
+  // PID 4 是 Windows 的 System 进程：**活着，但不是我们的** —— 正是 pid 回收事故的形态
+  ok(procx.pidAlive(4) === true && procx.nodePidAlive(4) === false,
+    'proc：活着的非 node 进程（PID 4 System）不被误判为我们的进程');
+  ok(procx.imageName(4) !== null && procx.imageName(4) !== 'node.exe',
+    'proc：imageName 能读出映像名（实得 ' + procx.imageName(4) + '）');
+  ok(compSrc.includes('HB_STALE_MS') && compSrc.includes('touchHeartbeat()'),
+    '结构钉：看门狗锁判活加了心跳（node.exe + 心跳 < 90s）');
+  ok(!compSrc.includes('pid && pidAlive(pid)'),
+    '结构钉：companion.js 不再拿 .ui.pid 判服务存活（改用 47851 端口）');
+  ok(compSrc.includes('const live = portListening(DEFAULT_PORT)'),
+    '结构钉：stopService / ensureService 以端口为准');
+  ok(!compSrc.includes('portDownStreak'),
+    '结构钉：整段「假死 → taskkill .ui.pid」已删除（那是误杀的来源）');
+  const updSrc2 = readT('core/update.js');
+  ok(updSrc2.includes('nodePidAlive') && updSrc2.includes('.companion.hb'),
+    '结构钉：update.js 的看门狗判活也用 node + 心跳（否则更新后可能不重启服务）');
   const panelSrc = readT('ui/dsh-ui/panel.js');
   ok(panelSrc.includes("data-act=\"check-update\"") && panelSrc.includes("data-act=\"apply-update\"") &&
     panelSrc.includes("data-act=\"rollback\""), '面板「关于」页有 检查 / 立即更新 / 回滚 三个动作');

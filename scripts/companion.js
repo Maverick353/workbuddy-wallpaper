@@ -6,7 +6,7 @@
  * ------------------------------------------------------------------
  * 管什么：让独立壁纸服务（scripts/start-ui.js）跟着 WorkBuddy 的生命周期走 ——
  *   · WorkBuddy 在跑且服务没在跑 → 自动起服务（spawn start-ui.js）
- *   · WorkBuddy 没了 → 自动停服务（按 .ui.pid taskkill；页面已不存在，无需 CDP 卸载）
+ *   · WorkBuddy 没了 → 自动停服务（按 **47851 端口的主人** taskkill；页面已不存在，无需 CDP 卸载）
  *   服务自己崩了（WorkBuddy 还在）→ 下个 tick 自然重启（幂等）
  *
  * 怎么跑：
@@ -27,13 +27,20 @@
  * 韧性：tick 整体 try/catch + uncaughtException 只记录不退出（与 start-ui 同模式）；
  *   起服务失败退避 30s，杜绝重启风暴；WorkBuddy 状态连续 2 次读数一致才动作（防抖 ~10s）。
  *   自检三件套（2026-10-13 收尾补齐）：① 日志按 1MB 轮转（companion.log.1），不会无限增长；
- *   ② pid 活着但端口连续 4 tick 不通 ⇒ 判「假死」强杀重起；③ 每 60 tick（≈5min）打心跳。
+ *   ② **判活一律以 47851 端口为准**（端口在=服务真活着；不在就直接拉起，不再 taskkill `.ui.pid` 里那个 pid）；③ 每 60 tick（≈5min）打心跳。
+ *
+ * ⚠️ 2026-10-20 事故与修复（详见 `修复计划-进程存活判定.md`）：**Windows 会回收 pid**，
+ *   死进程的 pid 会被分配给无关进程（那次是 svchost.exe）。所以：
+ *   · 看门狗锁判活 = node.exe + 心跳 < 90s（`core/proc.js` + `.companion.hb`）；
+ *   · 服务判活 = **端口**，绝不用 `.ui.pid` 里那个可能被复用的 pid 去 taskkill。
  * 单实例：<数据目录>/.companion.lock 写自己 PID；已存活 → 打印并 exit 0。
  * 平台：仅 Windows（依赖 tasklist / taskkill / netstat）。
  */
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
+// pid 存活判定统一走 core/proc.js —— Windows 会回收 pid，只看 pidAlive 会误判（见该文件顶部）
+const proc = require('../core/proc.js');
 
 const { dataDir } = require('./server.js');
 
@@ -50,9 +57,8 @@ const VBS_NAME = 'wallpaper-companion.vbs';
 const DEFAULT_PORT = 47851;          // start-ui 的默认端口（--status 诊断用）
 const TICK_MS = 5000;                // 看门周期
 const CONFIRM_TICKS = 2;             // 防抖：连续两次读数一致才动作（≈10s）
-const START_CONFIRM_MS = 3000;       // 起服务后等 .ui.pid 出现的确认时长
+const START_CONFIRM_MS = 3000;       // 起服务后等 47851 端口起来的确认时长
 const START_BACKOFF_MS = 30000;      // 起失败退避时长（防快速重启风暴）
-const PORT_DOWN_LIMIT = 4;           // pid 活着但端口不通连续 N tick → 判假死重起（≈20s）
 const HEARTBEAT_TICKS = 60;          // 每 N tick 打一次心跳（≈5min，证明看门还活着）
 const LOG_MAX_BYTES = 1024 * 1024;   // 日志轮转阈值（1MB）
 const LOG_KEEP = 1;                  // 保留的滚动份数（companion.log.1）
@@ -102,40 +108,40 @@ function workbuddyPids() {
   return pids;
 }
 
-/** 某 PID 是否活着（tasklist /FI "PID eq x" 有匹配行）。 */
-function pidAlive(pid) {
-  if (!pid || pid <= 0) return false;
-  const out = tasklistOut(['/FI', 'PID eq ' + pid, '/NH']);
-  return out.indexOf(String(pid)) >= 0;   // 无匹配时只打印本地化 INFO 行（不含 PID 数字）
-}
+/** 某 PID 上有没有进程（**不保证是我们的**）。 */
+const pidAlive = proc.pidAlive;
 
-/** 取某个 pid 的映像名（小写）；查不到返回 null。 */
-function imageName(pid) {
-  if (!pid || pid <= 0) return null;
-  const out = tasklistOut(['/FI', 'PID eq ' + pid, '/NH', '/FO', 'CSV']);
-  const lines = String(out || '').split(/\r?\n/).filter((l) => l.trim());
-  for (const line of lines) {
-    const m = line.match(/^"([^"]+)","(\d+)"/);
-    if (m && Number(m[2]) === Number(pid)) return m[1].toLowerCase();
-  }
-  return null;                            // 无匹配时只有一行本地化 INFO
+// ── 看门狗心跳（修复计划 D3）──────────────────────────────────────────────
+// 每 tick 刷一次：把「pid 被回收给另一个 node.exe」这类误判压到 90s 窗口内 —— 活的看门狗每 5s 就在写。
+const HB_FILE = path.join(DIR, '.companion.hb');
+const HB_STALE_MS = 90000;
+
+function heartbeatAgeMs() {
+  try { return Date.now() - fs.statSync(HB_FILE).mtimeMs; } catch (_) { return Infinity; }
+}
+function touchHeartbeat() {
+  try { fs.writeFileSync(HB_FILE, String(Date.now())); } catch (_) {}
 }
 
 /**
- * 锁里的那个 pid 是不是**我们的看门狗**。
+ * 锁里的那个 pid 是不是**我们的看门狗**：node 进程 **且** 心跳新鲜。
  *
- * 为什么不能只用 `pidAlive()`：**Windows 会回收 pid**。
- * 2026-10-20 实测事故：看门狗死时占用 pid 4316，系统把 4316 回收给了 `svchost.exe`，
- * 于是之后每次启动都被判定"已有 companion 在跑"直接退出 —— 壁纸静默停机两天，用户只看到"没启动"。
- * 所以必须再验一条：映像名要是 `node.exe`。
- * （残余误判只剩"pid 被回收给另一个 node.exe"，概率极低；查不到映像名时保守当作活着，避免重复起。）
+ * 为什么不能只用 pidAlive：**Windows 会回收 pid**。2026-10-20 事故里看门狗死时占用 4316，
+ * 系统把 4316 回收给了 `svchost.exe`，于是之后每次启动都判「已有 companion 在跑」直接退出
+ * —— 壁纸静默停机两天，用户只看到「没启动」。
+ *
+ * 光验映像名也不够：这台机器上 node.exe 有十来个（WorkBuddy 自己就一堆），pid 完全可能被回收给另一个 node。
+ * 所以叠一条心跳。没有心跳文件时**保守当作活着**（升级过渡期跑的是旧版看门狗，多起一个反而糟）。
  */
 function companionAlive(pid) {
-  if (!pidAlive(pid)) return false;
-  const img = imageName(pid);
-  if (img === null) return true;
-  if (img !== 'node.exe') {
-    log('锁里的 pid ' + pid + ' 实际是 ' + img + '（pid 已被系统回收）→ 判定为残留锁');
+  if (!proc.nodePidAlive(pid)) {
+    if (pidAlive(pid)) log('锁里的 pid ' + pid + ' 不是 node.exe（pid 已被系统回收）→ 判定为残留锁');
+    return false;
+  }
+  const age = heartbeatAgeMs();
+  if (age === Infinity) return true;
+  if (age > HB_STALE_MS) {
+    log('锁里的 pid ' + pid + ' 是 node 但心跳已 ' + Math.round(age / 1000) + 's 未更新 → 判定为残留锁');
     return false;
   }
   return true;
@@ -178,18 +184,23 @@ function portListening(port) {
   return { listening: pid > 0, pid };
 }
 
-/** 停服务：taskkill /F /T（杀进程树）；pid 文件失效则清理。reason 仅用于日志措辞。 */
+/**
+ * 停服务：**只杀 47851 端口的主人**（修复计划 D2/D4）。
+ *
+ * 为什么不再用 `.ui.pid` 里的 pid：那个文件会陈旧、会被手工删，pid 还会被 Windows 回收给别的进程
+ * —— 按它 `taskkill /F /T` 有可能连坐杀掉**无关的整棵进程树**（2026-10-20 那个 pid 上是 svchost）。
+ * 端口是"服务真的在跑"的唯一客观证据，而且端口的主人必然是我们。
+ */
 function stopService(reason) {
-  const pid = readPidFile();
-  if (!pid) return false;
+  const live = portListening(DEFAULT_PORT);
+  if (!live.listening) {
+    if (readPidFile()) { log(reason + '：' + DEFAULT_PORT + ' 未监听 → 清理失效 .ui.pid'); removePidFile(); }
+    return false;
+  }
+  const pid = live.pid;
   const r = spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)], { windowsHide: true, encoding: 'buffer' });
   if (r.status === 0) {
     log(reason + ' → 已停止壁纸服务 (pid=' + pid + ')');
-    removePidFile();
-    return true;
-  }
-  if (!pidAlive(pid)) {
-    log('服务进程已不在 (pid=' + pid + ') → 清理失效 pid 文件');
     removePidFile();
     return true;
   }
@@ -208,13 +219,15 @@ function spawnService() {
 // ── CLI 子命令 ─────────────────────────────────────────────────────────────
 function statusCmd() {
   const wb = workbuddyPids();
-  const pid = readPidFile();
-  const alive = !!(pid && pidAlive(pid));
   const ns = netstatOut();
   const svcPid = listenPid(ns, DEFAULT_PORT);
   const cdpPid = listenPid(ns, CDP_PORT);
+  const pidInFile = readPidFile();
   process.stdout.write('[companion] WorkBuddy: ' + (wb.length ? '运行中 (pid ' + wb.join(', ') + ')' : '未运行') + '\n');
-  process.stdout.write('[companion] 壁纸服务: ' + (alive ? 'pid ' + pid + ' 存活' : '未运行（.ui.pid ' + (pid ? '指向的进程已死' : '缺失') + '）') + '\n');
+  // 存活以**端口**为准（修复计划 D2）：`pidAlive(.ui.pid)` 会被 pid 回收骗到，把 svchost 报成"服务存活"。
+  process.stdout.write('[companion] 壁纸服务: ' + (svcPid
+    ? 'pid ' + svcPid + ' 存活'
+    : '未运行（' + DEFAULT_PORT + ' 未监听' + (pidInFile ? '；.ui.pid 里的 ' + pidInFile + ' 已失效' : '') + '）') + '\n');
   process.stdout.write('[companion] ' + DEFAULT_PORT + ': ' + (svcPid ? 'LISTENING (pid ' + svcPid + ')' : '未监听') + '\n');
   const cdpOk = cdpPid > 0;
   process.stdout.write('[companion] CDP ' + CDP_PORT + ': ' + (cdpOk ? 'LISTENING（可注入 UI）' : '未监听 —— UI 注入不可用') + '\n');
@@ -235,8 +248,8 @@ function statusCmd() {
 }
 
 function stopServiceCmd() {
-  if (!readPidFile()) { log('--stop-service：无 .ui.pid，服务未在运行'); process.exit(0); }
-  stopService('手动 --stop-service');
+  // 判活走端口（D2）：`.ui.pid` 可能陈旧，不能拿它当"服务在跑"的依据
+  if (!stopService('手动 --stop-service')) log('--stop-service：' + DEFAULT_PORT + ' 未监听，服务未在运行');
   process.exit(0);
 }
 
@@ -427,17 +440,24 @@ function usageCmd() {
 
 // ── 单实例锁 ───────────────────────────────────────────────────────────────
 function releaseLock() {
-  try { if ((fs.readFileSync(LOCK_FILE, 'utf8') || '').trim() === String(process.pid)) fs.unlinkSync(LOCK_FILE); } catch (_) {}
+  try {
+    if ((fs.readFileSync(LOCK_FILE, 'utf8') || '').trim() === String(process.pid)) {
+      try { fs.unlinkSync(LOCK_FILE); } catch (_) {}
+      try { fs.unlinkSync(HB_FILE); } catch (_) {}
+    }
+  } catch (_) {}
 }
 
 function acquireLock() {
   try {
     if (fs.existsSync(LOCK_FILE)) {
       const old = Number((fs.readFileSync(LOCK_FILE, 'utf8') || '').trim());
-      if (old && old !== process.pid && companionAlive(old)) return false;   // 已有一个看门在跑（且确实是 node）
+      // 判活 = node.exe + 心跳新鲜（D3）；只看 pid 会被 Windows 的 pid 回收骗到
+      if (old && old !== process.pid && companionAlive(old)) return false;
       log('发现失效/残留 lock（pid=' + old + '）→ 接管');
     }
     fs.writeFileSync(LOCK_FILE, String(process.pid));
+    touchHeartbeat();                          // 立刻落一次心跳，别让下一个实例误判我们是死的
     return true;
   } catch (e) {
     log('lock 读写失败: ' + e.message);
@@ -450,35 +470,26 @@ let wbState = null;      // 已确认的 WorkBuddy 状态（null=未确认过）
 let wbPending = null;    // 上次 tick 读数（待确认 → 防抖）
 let backoffUntil = 0;    // 起服务失败退避截止（ms 时间戳）
 let tickCount = 0;       // tick 计数（心跳节拍）
-let portDownStreak = 0;  // pid 活着但端口不通的连续 tick 数（假死判定）
 
+/**
+ * 保证服务在跑。**判活一律以 47851 端口为准**（修复计划 D2）。
+ *
+ * 旧实现是「`pidAlive(.ui.pid)` 判活 → 端口连续 N tick 不通就 taskkill 那个 pid」。
+ * 那套在 pid 被系统回收时会**杀错进程**，而 pid 文件陈旧时又会误判"服务还活着"。
+ * 端口是客观证据，还能顺手把 `.ui.pid` 校正成真正的主人 —— 于是整段「假死强杀」可以整块删掉。
+ */
 function ensureService() {
-  const pid = readPidFile();
-  if (pid && pidAlive(pid)) {
-    // 自检：进程活着 ≠ 服务可用。端口连续 PORT_DOWN_LIMIT 个 tick 不通 ⇒ 判假死，强杀重起。
-    if (portListening(DEFAULT_PORT).listening) { portDownStreak = 0; backoffUntil = 0; return; }
-    portDownStreak++;
-    log('服务 pid=' + pid + ' 存活但 ' + DEFAULT_PORT + ' 未监听（' + portDownStreak + '/' + PORT_DOWN_LIMIT + '）');
-    if (portDownStreak < PORT_DOWN_LIMIT) return;
-    log('判定服务假死 → 强制重启');
-    try { spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)], { windowsHide: true, encoding: 'buffer' }); } catch (_) {}
-    removePidFile();
-    portDownStreak = 0;
-  } else {
-    portDownStreak = 0;
-    // ⚠️ pid 文件缺失/失效 ≠ 服务真的没跑：端口可能仍被一个**活着的**服务占着
-    //    （`.ui.pid` 被手工删掉、写盘失败、或 pid 被复用都会这样）。
-    //    此时若直接 spawn，新进程会因端口占用起不来 → 每 30s 失败一次空转，而旧服务一直在正常干活。
-    //    **先探端口，能复用就复用**：回写 pid 文件即恢复判断。
-    const live = portListening(DEFAULT_PORT);
-    if (live.listening) {
+  const live = portListening(DEFAULT_PORT);
+  if (live.listening) {
+    if (readPidFile() !== live.pid) {
       const ok = writePidFile(live.pid);
       log('检测到 ' + DEFAULT_PORT + ' 上已有服务在跑 (pid=' + live.pid + ') → 复用' +
-          (ok ? '并回写 .ui.pid' : '（pid 文件回写失败，仅本次跳过重启）'));
-      backoffUntil = 0;
-      return;
+        (ok ? '并校正 .ui.pid' : '（.ui.pid 回写失败，仅本次跳过）'));
     }
+    backoffUntil = 0;
+    return;
   }
+  // 端口没人听 = 服务没跑。这里**不碰 .ui.pid 里那个 pid** —— 它可能已被系统回收给无关进程。
   if (Date.now() < backoffUntil) return;                       // 退避中，不重启风暴
   // 用户主动关闭过（面板「关闭壁纸」→ 服务写 .stopped）：不自动拉起，
   // 直到用户删 .stopped 或手动跑 start-ui（start-ui 启动时会清掉它）。
@@ -486,13 +497,14 @@ function ensureService() {
   try { if (fs.existsSync(stopped)) return; } catch (_) {}
   log('WorkBuddy 在跑、壁纸服务未运行 → 启动服务（spawn ' + path.basename(START_UI) + '）');
   try { spawnService(); } catch (e) { log('spawn 失败: ' + e.message); }
-  sleepSync(START_CONFIRM_MS);                                 // 等 .ui.pid 落盘
-  const pid2 = readPidFile();
-  if (pid2 && pidAlive(pid2)) {
+  sleepSync(START_CONFIRM_MS);                                 // 等端口起来
+  const pid2 = listenPid(netstatOut(), DEFAULT_PORT);
+  if (pid2) {
+    writePidFile(pid2);
     log('服务已就绪 (pid=' + pid2 + ', http://127.0.0.1:' + DEFAULT_PORT + ')');
     backoffUntil = 0;
   } else {
-    log('服务启动失败（' + START_CONFIRM_MS / 1000 + 's 内 .ui.pid 未就绪，如端口占用）→ 退避 ' + START_BACKOFF_MS / 1000 + 's');
+    log('服务启动失败（' + START_CONFIRM_MS / 1000 + 's 内 ' + DEFAULT_PORT + ' 未监听，如端口占用）→ 退避 ' + START_BACKOFF_MS / 1000 + 's');
     backoffUntil = Date.now() + START_BACKOFF_MS;
   }
 }
@@ -511,11 +523,12 @@ function tick() {
     else stopService('WorkBuddy 已关闭');
 
     // 心跳：周期性证明「看门还活着」，也是排查时判断看门是否早死的唯一可靠依据。
+    touchHeartbeat();                                            // 每个 tick 都刷（D3：锁判定靠它）
     tickCount++;
     if (tickCount % HEARTBEAT_TICKS === 0) {
-      const pid = readPidFile();
+      const svcPid = listenPid(netstatOut(), DEFAULT_PORT);
       log('心跳：看门存活（tick=' + tickCount + '）｜WorkBuddy ' + (wbState ? '在运行' : '未运行') +
-        '｜服务 ' + (pid && pidAlive(pid) ? 'pid ' + pid : '未运行'));
+        '｜服务 ' + (svcPid ? 'pid ' + svcPid : '未运行'));
     }
   } catch (e) {
     log('tick 异常（已忽略，看门继续）：' + ((e && e.message) || e));

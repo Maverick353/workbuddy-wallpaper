@@ -30,6 +30,8 @@ const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
 const crypto = require('crypto');
+// pid 存活判定统一走 proc.js —— Windows 会回收 pid，只看 pidAlive 会误判（见 proc.js 顶部与修复计划）
+const proc = require('./proc.js');
 
 // ── 默认配置（用 `<pkgRoot>/update.json` 可覆盖；用户再用 `<dataDir>/update.json` 覆盖）──
 const DEFAULTS = {
@@ -725,7 +727,8 @@ function acquireUpdateLock(dataDir, opts) {
       let info = null;
       try { info = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) {}
       const age = info && info.ts ? (Date.now() - info.ts) : Infinity;
-      const alive = info && info.pid ? pidAlive(info.pid) : false;
+      // 换成 nodePidAlive：pid 可能已被 Windows 回收给无关进程，只看 pidAlive 会让锁永远"被占着"
+      const alive = info && info.pid ? proc.nodePidAlive(info.pid) : false;
       if (alive && age < staleMs) {
         throw new Error('已有一次更新正在进行（pid ' + info.pid + '，' + Math.round(age / 1000) + 's 前开始），请稍后再试');
       }
@@ -878,16 +881,24 @@ function rollbackTo(o) {
 
 // ── 更新后的重启编排 ──────────────────────────────────────────────────────
 /**
- * 看门狗是否活着（`.companion.lock` 里的 pid 是否存活）。
+ * 看门狗是否**真的**活着（`.companion.lock` 里的 pid 是 node.exe，且心跳新鲜）。
  * 为什么要判：apply 完成后本进程会 `exit(0)`，靠看门狗在 5s 内用**新代码**把服务拉回来。
  * 如果看门狗不在（例如用户是双击 启动.cmd 手动起的服务），退出就等于壁纸消失 —— 得先自己补一个。
+ *
+ * ⚠️ 必须比 `pidAlive` 更严：Windows 会把死进程的 pid 回收给别的进程（2026-10-20 事故）。
+ *    只看 pid 会误判"看门狗还在"→ 更新后本进程退出、没人接手 → 壁纸消失。
+ * ⚠️ 但没有心跳文件时**保守判定为活着**：那说明跑的是旧版看门狗（升级过渡期），
+ *    此时宁可"信它一次"，也不要误判成"没人"去多起一个。
  */
 function watchdogAlive(dataDir) {
   try {
     const pid = parseInt(String(fs.readFileSync(path.join(dataDir, '.companion.lock'), 'utf8')).trim(), 10);
     if (!pid) return false;
-    process.kill(pid, 0);   // 不真发信号，只探测存在性
-    return true;
+    if (!proc.nodePidAlive(pid)) return false;
+    let age;
+    try { age = Date.now() - fs.statSync(path.join(dataDir, '.companion.hb')).mtimeMs; }
+    catch (_) { return true; }                     // 无心跳文件 = 旧版看门狗，信它
+    return age < 90000;
   } catch (_) { return false; }
 }
 
