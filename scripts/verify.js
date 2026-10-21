@@ -607,6 +607,40 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     'HTTP 报的 currentVersion === package.json 的版本（不是插件命名空间）',
     'api=' + (apiUpd && apiUpd.currentVersion) + ' pkg=' + pkgVer);
 
+  // ⭐ 回归钉（2026-10-21 真机自更新后才发现）：**缓存不能覆盖实时状态**。
+  //    原实现 `Object.assign({currentVersion: 实时}, 缓存结果)` —— 缓存里的旧 currentVersion
+  //    会把实时值盖掉：更新成功、服务重启后，面板仍显示「有新版本」，而且 hasUpdate 永远停在
+  //    检查那一刻的结论。用户看到的就是一个永远升不完的版本。
+  {
+    const stalePath = path.join(dataDir, 'update-cache.json');
+    const backupCache = fs.existsSync(stalePath) ? fs.readFileSync(stalePath, 'utf8') : null;
+    fs.writeFileSync(stalePath, JSON.stringify({
+      lastCheckAt: Date.now() - 5000,
+      etag: null,
+      source: 'stale-test',
+      result: {
+        ok: true,
+        currentVersion: '0.0.1',           // ← 陈旧：更新前的版本
+        latest: pkgVer,                     // 与当前实际版本相同 ⇒ 不该再报"有更新"
+        minSupported: '0.0.1',
+        hasUpdate: true,
+        mustUpdate: true,
+        canUpdate: true,
+        notes: 'stale',
+        zip: { url: 'https://example.com/x.bin' },
+      },
+    }));
+    const st = await J(BASE + '/api/update', { headers: TK });
+    ok(st && st.currentVersion === pkgVer,
+      '缓存里的旧 currentVersion 不会覆盖实时版本（更新后不会显示"升不完的新版本"）',
+      'api=' + (st && st.currentVersion) + ' cache=0.0.1 pkg=' + pkgVer);
+    ok(st && st.hasUpdate === false,
+      'hasUpdate 用实时版本重算（latest === 当前版本 → 无更新）',
+      'api=' + (st && st.hasUpdate));
+    if (backupCache !== null) fs.writeFileSync(stalePath, backupCache);
+    else { try { fs.unlinkSync(stalePath); } catch (_) {} }
+  }
+
   // ── P1-3：本地接口鉴权（令牌 + Origin 双保险）────────────────────────────
   // 用 http.request 而不是 fetch：浏览器语境里 Origin 是受禁头，fetch 可能把它剥掉；这里必须真设上。
   const rawReq = (p0, headers, method) => new Promise((resolve) => {

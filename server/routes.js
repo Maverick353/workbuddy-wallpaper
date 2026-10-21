@@ -89,9 +89,14 @@ function updateStatus(ctx) {
   const cfg = update.loadConfig({ dataDir });
   const cache = update.readCache(dataDir);
   const r = cache.result || null;
-  return Object.assign({
+  // ⚠️ 顺序很重要：**缓存结果先铺底，实时字段后覆盖**。
+  // 踩过（2026-10-21 真机自更新后才暴露）：原来是反过来的 —— 缓存里的 `currentVersion`
+  // 会盖掉磁盘上的实时版本。于是「更新成功 → 重启 → 面板仍显示有新版本」，
+  // 而且 `hasUpdate` 永远是检查那一刻算出来的旧值，用户看到的是一个升不完的新版本。
+  const cur = currentVersion(ctx);
+  const st = Object.assign({}, r || {}, {
     ok: true,
-    currentVersion: currentVersion(ctx),
+    currentVersion: cur,
     checked: !!r,
     feeds: cfg.feeds,
     channel: cfg.channel,
@@ -100,7 +105,17 @@ function updateStatus(ctx) {
     checkIntervalHours: cfg.checkIntervalHours,
     keepBackups: cfg.keepBackups,
     backups: update.listBackups(dataDir).map((b) => ({ version: b.version, at: new Date(b.at).toISOString() })),
-  }, r || {}, { lastCheckAt: cache.lastCheckAt || (r && r.lastCheckAt) || 0 });
+  });
+
+  // 缓存的 hasUpdate/mustUpdate/canUpdate 是「检查当时基于旧版本」算出来的；
+  // 版本变了（更新成功、或手动回滚）必须用实时版本重算，否则结论就是错的。
+  if (r && r.latest && update.parseVersion(String(r.latest))) {
+    st.hasUpdate = update.isNewer(cur, String(r.latest));
+    st.mustUpdate = r.minSupported ? update.compareVersions(cur, String(r.minSupported)) < 0 : false;
+    st.canUpdate = !!(r.zip && r.zip.url) && update.compareVersions(cur, String(r.latest)) < 0;
+  }
+  st.lastCheckAt = cache.lastCheckAt || (r && r.lastCheckAt) || 0;
+  return st;
 }
 
 /** 更新前后比较 `scripts/companion.js` 是否变了 —— 变了要提示用户「看门狗需重启」。 */
