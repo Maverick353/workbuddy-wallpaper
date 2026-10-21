@@ -60,7 +60,7 @@
 
 > ⚠️ **下载下来不会自己跑。** 需要**双击一次**安装脚本（或跑 .exe 安装包），之后才是自动的。
 >
-> 🌐 **不想看 GitHub？** 有中文图文下载页：**https://workbuddy-wallpaper.app.workbuddy.host/**
+> 🌐 **不想看 GitHub？** 有中文图文下载页：**https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/?sharecode=SK54F4ACNS**
 >
 > ✅ **不需要你预先装 Node** —— 脚本会先去找 WorkBuddy 自带的运行时
 > （`CODEBUDDY_NODE_BIN` → 内置版本目录），找不到才回退到系统 PATH。需要的是 **Node ≥ 22**。
@@ -200,7 +200,7 @@ node scripts/companion.js --stop-service         # 手动停服务
 ```json
 {
   "feeds": [
-    "https://workbuddy-wallpaper.app.workbuddy.host/version.json",
+    "https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/version.json?sharecode=SK54F4ACNS",
     "https://raw.githubusercontent.com/Maverick353/workbuddy-wallpaper/main/landing/version.json"
   ],
   "channel": "stable",

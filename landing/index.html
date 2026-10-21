@@ -64,7 +64,9 @@
   // 而"下载页指向旧版本"是不会报错的静默故障。
   (function () {
     function fail() { document.getElementById('dl-ver').textContent = '本站版本信息暂时读不到，请用上面的 GitHub 按钮。'; }
-    fetch('version.json', { cache: 'no-store' }).then(function (r) {
+    // ⚠️ 必须带上 `location.search`：这个站点每条路径都要求 `?sharecode=…`，
+    // 相对路径 fetch 不会自动继承 query，漏了就变成 403。
+    fetch('version.json' + location.search, { cache: 'no-store' }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     }).then(function (j) {
@@ -73,6 +75,8 @@
       document.getElementById('dl-ver').textContent = '当前版本 v' + j.latest + mb;
       var a = document.getElementById('dl-bin');
       if (z.url) { a.href = z.url; a.textContent = '下载 v' + j.latest; a.style.display = ''; }
+      var vl = document.getElementById('ver-link');
+      if (vl) vl.href = 'version.json' + location.search;
     }).catch(fail);
   })();
   </script>
@@ -138,7 +142,7 @@
   <footer>
     开源项目 · AGPL-3.0-or-later ·
     <a href="https://github.com/Maverick353/workbuddy-wallpaper">GitHub</a> ·
-    <a href="version.json">版本信息</a><br>
+    <a id="ver-link" href="version.json">版本信息</a><br>
     演示用的壁纸均来自 Wallpaper Engine 创意工坊，非本项目作品。
   </footer>
 

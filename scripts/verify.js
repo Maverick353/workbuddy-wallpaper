@@ -32,7 +32,21 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   const BASE = 'http://127.0.0.1:' + port;
   // P1-3：受保护接口（/api/update* /api/shutdown）要带令牌；其它接口不需要
   const TK = { 'x-wbwp-token': apiToken };
-  const J = async (u, o) => (await fetch(u, o)).json();
+  // 失败时把 undici 的 cause 也带出来 —— 不然只有一句 "fetch failed"，查不出是拒绝连接还是超时。
+  // ⚠️ 每个请求都带 `connection: close`：undici 会复用空闲 socket，而 Node 的 http server
+  //    默认 5s 空闲就断掉 keep-alive 连接 —— 测试跑得稍慢一点就会复用到"已死"的连接，
+  //    表现为随机 `ECONNRESET`（2026-10-21 排查了半天，服务端连 request 事件都没收到）。
+  const J = async (u, o) => {
+    const opt = Object.assign({}, o || {}, {
+      headers: Object.assign({ connection: 'close' }, (o && o.headers) || {}),
+    });
+    let r;
+    try { r = await fetch(u, opt); } catch (e) {
+      const c = e && e.cause;
+      throw new Error('fetch ' + u + ' 失败: ' + (c && (c.code || c.message) || e.message));
+    }
+    return r.json();
+  };
 
   process.stdout.write('\n[1] 服务与健康\n');
   const h = await J(BASE + '/api/wallpaper/health');
@@ -228,8 +242,12 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       'min=' + feedJson.minSupported + ' latest=' + feedJson.latest);
     // 镜像文件必须与 feed 声明同名 —— 三者（feed.latest / 镜像名 / 实际文件）任一错位都是静默故障：
     // feed 说有更新 → 客户端按镜像名去下 → 404 → 用户看到"更新失败"，却查不出为什么。
+    // ⚠️ 比的是 **pathname**，不是整条 URL：静态站地址带 `?sharecode=`（2026-10-21 起），
+    //    直接 endsWith 会被 query 骗过去。
     const z = (feedJson.assets && feedJson.assets.zip) || {};
-    ok(String(z.url || '').endsWith('workbuddy-wallpaper-' + feedJson.latest + '.bin'),
+    let mainPath = '';
+    try { mainPath = new URL(String(z.url || '')).pathname; } catch (_) {}
+    ok(mainPath.endsWith('/workbuddy-wallpaper-' + feedJson.latest + '.bin'),
       'feed 的主源文件名与 latest 对应（workbuddy-wallpaper-<latest>.bin）',
       String(z.url || '(空)'));
   }
@@ -246,6 +264,39 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     '结构钉：release-feed 拒绝把 latest 往下调（降级保护）');
   ok(feedSrc.includes('产出后自检') && feedSrc.includes('镜像 sha256 与 feed.sha256 不符'),
     '结构钉：release-feed 写完回读自检（字节数/sha256/验签）');
+
+  // ── [9″] 发布目录与站址一致性（2026-10-21 换域名后新增）────────────────────
+  // 背景：旧应用被删后平台**不允许原目录再发布**，只能换新目录 `landing-site/` 重新发布。
+  // 于是出现两份副本 —— 这正是本项目反复吃过亏的形态。两道防线：
+  //   ① `scripts/sync-site.js --check` 严格镜像（下面直接比对两个关键文件）；
+  //   ② feed 的「主页地址」与客户端「检查地址」必须同源同 query，否则客户端检查的是另一个站。
+  process.stdout.write('\n[9″] 发布目录与站址一致性\n');
+  ok(fs.existsSync(path.join(ROOT, 'scripts', 'sync-site.js')), '存在 scripts/sync-site.js（landing/ → landing-site/ 的严格镜像）');
+  const siteIdx = path.join(ROOT, 'landing-site', 'index.html');
+  if (fs.existsSync(siteIdx)) {
+    ok(readT('landing-site/index.html') === readT('landing/index.html'),
+      'landing-site/index.html 与 landing/index.html 逐字节一致（改完源要跑 sync-site）');
+    ok(readT('landing-site/version.json') === readT('landing/version.json'),
+      'landing-site/version.json 与 landing/version.json 逐字节一致');
+  } else {
+    process.stdout.write('  · 发布目录 landing-site/ 不在本地 → 跳过镜像比对\n');
+  }
+
+  // 站址一致性：客户端从 update.json 的 feeds[0] 检查，feed 自己声明的主页是 url。
+  // 两者必须同源 + 同 query（这个站每条路径都要 ?sharecode=，漏了就是 403）。
+  const updJsonCfg = JSON.parse(readT('update.json'));
+  const homepage = String((feedJson && feedJson.url) || '');
+  try {
+    const h = new URL(homepage);
+    const expected = h.origin + '/version.json' + h.search;
+    ok(updJsonCfg.feeds[0] === expected,
+      'update.json 的 feeds[0] 与 feed 声明的主页同源同 query',
+      'feed=' + expected + '  update.json=' + updJsonCfg.feeds[0]);
+  } catch (e) {
+    ok(false, 'feed 的 url 是合法 URL', e.message);
+  }
+  ok(/^https:\/\/raw\.githubusercontent\.com\//.test(String((updJsonCfg.feeds || [])[1] || '')),
+    'feeds[1] 仍是 GitHub raw 兜底（主源挂掉时才用到）');
 
   // ── [10] 卸载路径不允许有交互提问 ─────────────────────────────────────
   // 起因：install.js 的 uninstall() 里原本有个「数据目录要一并删除吗？[y/N]」的交互提问。
@@ -688,7 +739,9 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       'feed 里带了 size 与 64 位 sha256');
 
     // 镜像文件名必须与版本对应（这条不依赖产物，CI 里也能验）
-    const mirrorName = path.basename(lv.assets.zip.url);
+    // ⚠️ 用 URL 的 pathname 取文件名，不能直接 basename 整条 URL —— 带 query 时会把 `?sharecode=…` 也带进来
+    let mirrorName = '';
+    try { mirrorName = new URL(String(lv.assets.zip.url)).pathname.split('/').pop(); } catch (_) {}
     ok(mirrorName === 'workbuddy-wallpaper-' + lv.latest + '.bin',
       '主源文件名 = workbuddy-wallpaper-<latest>.bin（实为 ' + mirrorName + '）');
 

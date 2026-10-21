@@ -7,7 +7,7 @@
  *
  * ① **只有静态站可用，所以只能轮询，不能真推送。**
  *    实测：本机 curl 直连 github.com / raw.githubusercontent.com 全部 `HTTP 000`（连接被重置），
- *    而自建静态站 `workbuddy-wallpaper.app.workbuddy.host` 是 HTTP 200 / 0.57s。
+ *    而托管在 workbuddy.host 上的下载站可直连（2026-10-21 起地址带 `?sharecode=`，见下）。
  *    所以 feed 主源 = 静态站，GitHub raw 只作兜底（海外/直连可用时）。
  *    "准推送"靠**四条触发时机**叠加：服务启动后延迟一次 + 运行中每 N 小时 + 面板打开时按需 +
  *    用户手动点。效果是「发布后最长 N 小时内本机就知道」。
@@ -37,7 +37,9 @@ const proc = require('./proc.js');
 const DEFAULTS = {
   // feed 列表：按顺序尝试，第一个成功的即采用（主源=静态站，兜底=GitHub raw）
   feeds: [
-    'https://workbuddy-wallpaper.app.workbuddy.host/version.json',
+    // 主源 = 静态站（国内可直连）。⚠️ 这个站每条路径都要求带 sharecode，不带就是 403，
+    // 所以 query 是地址的一部分，不能省（2026-10-21 换域名时踩过）。
+    'https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/version.json?sharecode=SK54F4ACNS',
     'https://raw.githubusercontent.com/Maverick353/workbuddy-wallpaper/main/landing/version.json',
   ],
   channel: 'stable',

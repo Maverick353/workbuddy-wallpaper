@@ -192,7 +192,17 @@ if (notes.length > NOTES_MAX) {
   process.exit(1);
 }
 const ghUrl = 'https://github.com/' + REPO_SLUG + '/releases/download/v' + version + '/' + ZIP_NAME;
-const siteBase = 'https://workbuddy-wallpaper.app.workbuddy.host';
+
+// ── 静态站基址 ─────────────────────────────────────────────────────────────
+// 2026-10-21 变动：原来的自定义域名 `workbuddy-wallpaper.app.workbuddy.host` 随旧应用一起被删除，
+// 而平台**不允许原目录重建**（换新目录重建后只给沙箱域名）。新地址是
+//   https://<sandboxId>.app.workbuddy.host/?sharecode=<code>
+// ⚠️ 这个站**每一条路径都要求带 sharecode**（不带就是 403），所以 feed 地址与更新包地址
+//    都必须把 query 拼上去 —— 少拼一次，客户端拿到的是 403 的 HTML。
+// 允许用 --site-base / --site-query 覆盖（将来拿到自定义域名时改这里就行，别处不用动）。
+const siteBase = (arg('--site-base') || process.env.WBWP_SITE_BASE || 'https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host').replace(/\/+$/, '');
+const siteQuery = arg('--site-query') || process.env.WBWP_SITE_QUERY || '?sharecode=SK54F4ACNS';
+const site = (p) => siteBase + p + siteQuery;
 
 // P2-1（幂等）：重跑**同一版本**时保留上一次的 releasedAt。
 // 否则每次生成都刷一个新时间 —— 内容没变、时间变了，既产生无意义 diff，也让人以为发布时间是今天。
@@ -219,7 +229,7 @@ const feed = {
   latest: version,
   minSupported: minSupported,
   releasedAt: prevReleasedAt || new Date().toISOString(),
-  url: siteBase + '/',
+  url: site('/'),
   notes: notes,
   assets: {
     zip: {
@@ -227,7 +237,7 @@ const feed = {
       // ⚠️ 两个源必须是**同一份字节**：镜像就是这份 zip 原样拷进 landing/ 的（只换文件名），
       //    所以 sha256 对两边都成立（本地重打的包不保证字节相同，见文件头说明）。
       // ⚠️ 静态站那份**不能叫 .zip**：改名前实测该域名对压缩包后缀一律 403（WAF 拦截页）。
-      url: noMirror ? ghUrl : siteBase + '/' + MIRROR_NAME,
+      url: noMirror ? ghUrl : site('/' + MIRROR_NAME),
       mirrors: noMirror ? [] : [ghUrl],
       size: size,
       sha256: sha256,
@@ -303,6 +313,7 @@ if (fetched) update.removeTree(fetched);
   console.log('\n✓ 产出后自检通过：回读 feed 合法 · 镜像字节数与 sha256 与 feed 一致 · 镜像验签通过');
 }
 
-console.log('\n下一步：部署 landing/ 到静态站（发布与部署分开跑），然后**必须**跑一次线上守门：');
-console.log('  node scripts/verify-live.js        # 核对 feed 可读、包可下、sha256 逐字节一致');
-console.log('  只在 ' + siteBase + '/version.json 与 ' + siteBase + '/' + MIRROR_NAME + ' 都验过之后，才算发布完成。');
+console.log('\n下一步：部署 landing-site/ 到静态站（发布与部署分开跑），然后**必须**跑一次线上守门：');
+console.log('  先镜像：node scripts/sync-site.js            # landing/ → landing-site/（发布根）');
+console.log('  再守门：node scripts/verify-live.js          # 核对 feed 可读、包可下、sha256 逐字节一致');
+console.log('  只在 ' + site('/version.json') + ' 与 ' + site('/' + MIRROR_NAME) + ' 都验过之后，才算发布完成。');

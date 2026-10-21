@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "channel": "stable",
+  "latest": "1.2.1",
+  "minSupported": "1.2.1",
+  "releasedAt": "2026-10-20T16:05:24.452Z",
+  "url": "https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/?sharecode=SK54F4ACNS",
+  "notes": "更新链路加固：包体签名验签、下载体积与跳转限制、本地接口令牌校验。低于 1.2.1 的版本请用安装包重装一次（旧版自更新不可用）。",
+  "assets": {
+    "zip": {
+      "url": "https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/workbuddy-wallpaper-1.2.1.bin?sharecode=SK54F4ACNS",
+      "mirrors": [
+        "https://github.com/Maverick353/workbuddy-wallpaper/releases/download/v1.2.1/workbuddy-wallpaper.zip"
+      ],
+      "size": 2803756,
+      "sha256": "4207d81676fc830d93f0b2a104f95a3427ae85caf4899d79796939f2cd830c86",
+      "signature": "BclvH2n4UWUjh4qaHnl+uTuE2L+v6btz7kQA+GrRp9QvjcuPKeuLkk3ciJRD8nkzlNcQrJEdSc6Do3Am+8q+Bw==",
+      "keyId": "wbwp-2026a"
+    }
+  }
+}
