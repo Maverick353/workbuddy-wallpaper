@@ -1,20 +1,20 @@
 {
   "schema": 1,
   "channel": "stable",
-  "latest": "1.2.1",
+  "latest": "1.2.2",
   "minSupported": "1.2.1",
-  "releasedAt": "2026-10-20T16:05:24.452Z",
+  "releasedAt": "2026-10-22T16:48:56.554Z",
   "url": "https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/?sharecode=SK54F4ACNS",
-  "notes": "更新链路加固：包体签名验签、下载体积与跳转限制、本地接口令牌校验。低于 1.2.1 的版本请用安装包重装一次（旧版自更新不可用）。",
+  "notes": "1.2.2：更新源换成新下载站（旧地址已下线），修复升级后仍提示有新版本的问题；进程判活跨平台。1.2.0 及以下请用安装包重装一次。",
   "assets": {
     "zip": {
-      "url": "https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/workbuddy-wallpaper-1.2.1.bin?sharecode=SK54F4ACNS",
+      "url": "https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/workbuddy-wallpaper-1.2.2.bin?sharecode=SK54F4ACNS",
       "mirrors": [
-        "https://github.com/Maverick353/workbuddy-wallpaper/releases/download/v1.2.1/workbuddy-wallpaper.zip"
+        "https://github.com/Maverick353/workbuddy-wallpaper/releases/download/v1.2.2/workbuddy-wallpaper.zip"
       ],
-      "size": 2803756,
-      "sha256": "4207d81676fc830d93f0b2a104f95a3427ae85caf4899d79796939f2cd830c86",
-      "signature": "BclvH2n4UWUjh4qaHnl+uTuE2L+v6btz7kQA+GrRp9QvjcuPKeuLkk3ciJRD8nkzlNcQrJEdSc6Do3Am+8q+Bw==",
+      "size": 2816036,
+      "sha256": "8ab8b4c23f47ebb9281570e1e81848957e0776b259a6c9af769eac953ed289c1",
+      "signature": "lAEdeEFoK/pF/OeIMxcPaG20fdCj2A15DlmA1K0B74bWzd88I2P2D+QPa6RrcmaeBRZZBcqe9GwfpJqt3N3OCA==",
       "keyId": "wbwp-2026a"
     }
   }
