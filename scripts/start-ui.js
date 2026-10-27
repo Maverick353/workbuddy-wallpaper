@@ -122,7 +122,12 @@ function startUpdateLoop(dir) {
 (async () => {
   const rawArgs = process.argv.slice(2);
   const args = parseArgs(rawArgs);
-  if (!rawArgs.includes('--port') && !rawArgs.includes('-p')) args.port = 47851;  // 本 skill 默认端口（避开其它工具）
+  // 默认端口：`--port` > 环境变量 `WBWP_PORT` > 47851。
+  // 为什么加环境变量：47851 被别的工具占住时（实测有过），用户没法改端口 ——
+  // 而看门狗（companion.js）是按固定端口判活的，两边必须读**同一个来源**，否则永远判"服务没起来"。
+  if (!rawArgs.includes('--port') && !rawArgs.includes('-p')) {
+    args.port = Number(process.env.WBWP_PORT) || 47851;  // 本 skill 默认端口（避开其它工具）
+  }
   const noInject = rawArgs.includes('--no-inject');
   const noWatch = rawArgs.includes('--no-watch');
   const dir = args.dataDir || dataDir();

@@ -29,7 +29,7 @@
  *   自检三件套（2026-10-13 收尾补齐）：① 日志按 1MB 轮转（companion.log.1），不会无限增长；
  *   ② **判活一律以 47851 端口为准**（端口在=服务真活着；不在就直接拉起，不再 taskkill `.ui.pid` 里那个 pid）；③ 每 60 tick（≈5min）打心跳。
  *
- * ⚠️ 2026-10-20 事故与修复（详见 `修复计划-进程存活判定.md`）：**Windows 会回收 pid**，
+ * ⚠️ 2026-10-20 事故与修复（详见 `docs/plan/修复计划-进程存活判定.md`）：**Windows 会回收 pid**，
  *   死进程的 pid 会被分配给无关进程（那次是 svchost.exe）。所以：
  *   · 看门狗锁判活 = node.exe + 心跳 < 90s（`core/proc.js` + `.companion.hb`）；
  *   · 服务判活 = **端口**，绝不用 `.ui.pid` 里那个可能被复用的 pid 去 taskkill。
@@ -54,7 +54,9 @@ const LOG_FILE = path.join(DIR, 'companion.log');
 const START_UI = path.join(__dirname, 'start-ui.js');
 const SELF = path.resolve(__filename);               // 本脚本绝对路径（vbs 启动项用）
 const VBS_NAME = 'wallpaper-companion.vbs';
-const DEFAULT_PORT = 47851;          // start-ui 的默认端口（--status 诊断用）
+// start-ui 的默认端口。**必须与 start-ui.js 读同一个来源**（WBWP_PORT），否则看门狗会在
+// 用户改了端口之后永远判"服务没起来"→ 反复拉起 + 误清 .ui.pid（这就是"改了端口反而更不稳"的根因）。
+const DEFAULT_PORT = Number(process.env.WBWP_PORT) || 47851;
 const TICK_MS = 5000;                // 看门周期
 const CONFIRM_TICKS = 2;             // 防抖：连续两次读数一致才动作（≈10s）
 const START_CONFIRM_MS = 3000;       // 起服务后等 47851 端口起来的确认时长
@@ -210,7 +212,9 @@ function stopService(reason) {
 
 /** 起服务（detached，脱离看门进程树；失败由调用方退避）。 */
 function spawnService() {
-  const child = spawn(process.execPath, [START_UI], { detached: true, stdio: 'ignore', windowsHide: true });
+  // 显式把端口传下去：即便环境变量在某种上下文里没被继承，父子两端也必须对齐同一个端口。
+  const child = spawn(process.execPath, [START_UI, '--port', String(DEFAULT_PORT)],
+    { detached: true, stdio: 'ignore', windowsHide: true });
   child.on('error', (e) => log('spawn start-ui 出错: ' + e.message));
   child.unref();
   return child;

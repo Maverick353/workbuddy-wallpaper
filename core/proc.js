@@ -18,7 +18,7 @@
  *    在 Linux 上 `imageName()` 恒为 null → 连带"更新单飞锁"判定失效（CI 直接红四条）。
  *    现在 Windows 走 `tasklist`，POSIX 走 `/proc/<pid>/comm` 再回退 `ps -o comm=`。
  *
- * 详见 `修复计划-进程存活判定.md` 的 D2/D3/D4。
+ * 详见 `docs/plan/修复计划-进程存活判定.md` 的 D2/D3/D4。
  */
 const fs = require('fs');
 const { spawnSync } = require('child_process');

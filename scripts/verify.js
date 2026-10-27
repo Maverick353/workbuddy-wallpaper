@@ -582,6 +582,16 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     '结构钉：companion.js 不再拿 .ui.pid 判服务存活（改用 47851 端口）');
   ok(compSrc.includes('const live = portListening(DEFAULT_PORT)'),
     '结构钉：stopService / ensureService 以端口为准');
+  // 端口来源必须两端一致：`start-ui` 认 WBWP_PORT，看门狗也必须认，
+  // 且拉起子进程时**显式传 --port**。否则用户改了端口 → 看门狗永远判"服务没起来"
+  // → 每 tick 重复拉起 + 误清 .ui.pid（"改了端口反而更不稳"就是这么来的）。
+  const startSrcPort = readT('scripts/start-ui.js');
+  ok(startSrcPort.includes('process.env.WBWP_PORT'),
+    '结构钉：start-ui 的默认端口支持 WBWP_PORT 覆盖');
+  ok(compSrc.includes('Number(process.env.WBWP_PORT) || 47851'),
+    '结构钉：看门狗的 DEFAULT_PORT 与 start-ui 同源（WBWP_PORT）');
+  ok(compSrc.includes("'--port', String(DEFAULT_PORT)"),
+    '结构钉：看门狗拉起服务时显式传 --port');
   ok(!compSrc.includes('portDownStreak'),
     '结构钉：整段「假死 → taskkill .ui.pid」已删除（那是误杀的来源）');
   const updSrc2 = readT('core/update.js');
