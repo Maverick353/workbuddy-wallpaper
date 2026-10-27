@@ -1,20 +1,20 @@
 {
   "schema": 1,
   "channel": "stable",
-  "latest": "1.2.2",
+  "latest": "1.2.3",
   "minSupported": "1.2.1",
-  "releasedAt": "2026-10-22T16:48:56.554Z",
+  "releasedAt": "2026-10-27T17:24:58.009Z",
   "url": "https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/?sharecode=SK54F4ACNS",
-  "notes": "1.2.2：更新源换成新下载站（旧地址已下线），修复升级后仍提示有新版本的问题；进程判活跨平台。1.2.0 及以下请用安装包重装一次。",
+  "notes": "1.2.3：新增数据导出/导入、注入探针、接口清单（自动生成）；端口可用 WBWP_PORT 配置且看门狗与服务同源。1.2.0 及以下请用安装包重装。",
   "assets": {
     "zip": {
-      "url": "https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/workbuddy-wallpaper-1.2.2.bin?sharecode=SK54F4ACNS",
+      "url": "https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/workbuddy-wallpaper-1.2.3.bin?sharecode=SK54F4ACNS",
       "mirrors": [
-        "https://github.com/Maverick353/workbuddy-wallpaper/releases/download/v1.2.2/workbuddy-wallpaper.zip"
+        "https://github.com/Maverick353/workbuddy-wallpaper/releases/download/v1.2.3/workbuddy-wallpaper.zip"
       ],
-      "size": 2816036,
-      "sha256": "8ab8b4c23f47ebb9281570e1e81848957e0776b259a6c9af769eac953ed289c1",
-      "signature": "lAEdeEFoK/pF/OeIMxcPaG20fdCj2A15DlmA1K0B74bWzd88I2P2D+QPa6RrcmaeBRZZBcqe9GwfpJqt3N3OCA==",
+      "size": 2841592,
+      "sha256": "6161fc5e2a83c2062d6d929751a8366cfbed4b3ec6d785436774bbb419ba4a1c",
+      "signature": "AbA5YNeVyYqlKZFMIZ86teQufT6zmMG9wV1gveD/zZlNyi2LtwsOTUDKQg04lB3ksYKiatvPL6aFOAiJASeCAQ==",
       "keyId": "wbwp-2026a"
     }
   }
