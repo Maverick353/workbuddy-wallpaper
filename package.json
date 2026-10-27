@@ -1,6 +1,6 @@
 {
   "name": "workbuddy-wallpaper",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "壁纸引擎与注入式 UI 技能 —— 零依赖本地服务 + 玻璃拟态界面，把壁纸画进 WorkBuddy 窗口",
   "keywords": [
     "wallpaper",
@@ -34,6 +34,12 @@
     "doctor": "node scripts/doctor.js",
     "resolve-node": "node scripts/resolve-node.js",
     "release-feed": "node scripts/release-feed.js",
+    "export": "node scripts/export.js",
+    "probe": "node scripts/probe-injection.js",
+    "api-docs": "node scripts/gen-api-docs.js",
+    "sync-site": "node scripts/sync-site.js",
+    "verify-live": "node scripts/verify-live.js",
+    "verify-apply": "node scripts/verify-apply-real.js",
     "install-skill": "node scripts/install.js",
     "uninstall-skill": "node scripts/install.js --uninstall"
   },

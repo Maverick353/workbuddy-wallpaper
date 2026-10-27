@@ -547,7 +547,7 @@ function wallpaperPanel(payload) {
     // u 来自 `/api/update`（纯读缓存，不发网络）—— 所以打开面板不会卡。
     var u = st.upd || {};
     // 兜底版本号保持字面量：verify.js [9] 段会断言它与 package.json 一致（防版本号漂移）
-    var cur = u.currentVersion || '1.2.2';
+    var cur = u.currentVersion || '1.2.3';
     var hasNew = !!u.hasUpdate;
     var must = !!u.mustUpdate;
     var busy = st.updBusy || '';

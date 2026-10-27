@@ -27,3 +27,11 @@ jobs:
       # 零依赖：不需要 npm install。verify.js 起一个临时本地服务打真实请求。
       - name: Run verify
         run: node scripts/verify.js
+
+      # 注入探针：只有本机真跑着 WorkBuddy（CDP 9222）时才有意义。
+      # 用 --soft：CI 上连不上 CDP 直接跳过并返回 0，不制造假红。
+      # 真正判定"界面挂上了没有"要在开发机手动跑：
+      #   node scripts/probe-injection.js
+      - name: 注入探针（CI 上自动跳过）
+        if: runner.os == 'Windows'
+        run: node scripts/probe-injection.js --soft

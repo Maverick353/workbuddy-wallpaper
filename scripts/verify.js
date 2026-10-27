@@ -298,6 +298,61 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   ok(/^https:\/\/raw\.githubusercontent\.com\//.test(String((updJsonCfg.feeds || [])[1] || '')),
     'feeds[1] 仍是 GitHub raw 兜底（主源挂掉时才用到）');
 
+  // ── [9‴] 交付工具链：数据导出/导入 · 接口文档防漂 · 注入探针 ──────────────
+  process.stdout.write('\n[9‴] 交付工具链（导出导入 / 接口文档 / 注入探针）\n');
+
+  // ① 导出→导入 往返（真实文件系统，不 mock）
+  //    只导出用户资产；**绝不能**把 .api-token 这类凭据带进备份包。
+  {
+    const ex = require('../scripts/export.js');
+    const src = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-exp-'));
+    const dst = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-imp-'));
+    fs.mkdirSync(path.join(src, 'themes', 'standalone'), { recursive: true });
+    fs.writeFileSync(path.join(src, 'themes', 'standalone', 'theme.json'), '{"bgScene":true}');
+    fs.writeFileSync(path.join(src, 'mask.json'), '{"opacity":0.3}');
+    fs.writeFileSync(path.join(src, '.api-token'), 'SHOULD_NOT_LEAK');
+    fs.writeFileSync(path.join(src, 'companion.log'), 'x');
+    const zp = path.join(os.tmpdir(), 'wbwp-exp-' + process.pid + '.zip');
+    try {
+      const r1 = ex.exportData({ dataDir: src, out: zp });
+      ok(r1.ok && r1.files >= 2, '导出：产出 zip 且至少含 2 个文件', JSON.stringify(r1));
+      const raw = fs.readFileSync(zp).toString('latin1');
+      ok(!raw.includes('.api-token') && !raw.includes('SHOULD_NOT_LEAK') && !raw.includes('companion.log'),
+        '导出：凭据与运行态（.api-token / 日志）不进包');
+      const r2 = ex.importData({ zip: zp, dataDir: dst, noBackup: true });
+      ok(r2.ok && r2.imported === r1.files, '导入：文件数与导出一致', r2.imported + '/' + r1.files);
+      ok(fs.readFileSync(path.join(dst, 'mask.json'), 'utf8') === '{"opacity":0.3}',
+        '导入：内容逐字节还原');
+      ok(!fs.existsSync(path.join(dst, '.api-token')), '导入：没有把凭据写进目标目录');
+    } finally {
+      for (const d of [src, dst]) { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) {} }
+      try { fs.unlinkSync(zp); } catch (_) {}
+    }
+  }
+
+  // ② 接口文档防漂：重新生成的结果必须与磁盘文件一致
+  {
+    const gen = require('../scripts/gen-api-docs.js');
+    let built = null, err = null;
+    try { built = gen.build(); } catch (e) { err = e; }
+    ok(!!built, '接口文档可生成（每条 ROUTES 都有说明）', err && err.message);
+    if (built) {
+      const cur = fs.existsSync(gen.OUT) ? fs.readFileSync(gen.OUT, 'utf8') : '';
+      ok(cur === built.text,
+        'docs/api/接口清单.md 与 routes.js 一致（加了接口没更新文档 → 这里红）',
+        '跑 node scripts/gen-api-docs.js 重新生成');
+    }
+  }
+
+  // ③ 注入探针：入库且判据正确（不依赖 CDP 是否开着）
+  {
+    const probe = readT('scripts/probe-injection.js');
+    ok(probe.includes('wdwCount >= 10') && probe.includes('rootTransparent'),
+      '结构钉：注入探针的判据是「元素数 + 吉祥物 + 背景透明」');
+    ok(probe.includes('innerHTML 恒为空'), '结构钉：探针里写明「场景是 iframe，innerHTML 恒空」这个易误判点');
+    ok(probe.includes('process.exit(out.ok ? 0 : 1)'), '注入探针以退出码表达结论（可进 CI）');
+  }
+
   // ── [10] 卸载路径不允许有交互提问 ─────────────────────────────────────
   // 起因：install.js 的 uninstall() 里原本有个「数据目录要一并删除吗？[y/N]」的交互提问。
   // 卸载器用 `runhidden` 跑 uninstall.cmd，提问窗口看不见、也没人能输入，
