@@ -1002,6 +1002,18 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     ok(p3 && !!p3.error, '暂停钉子：/api/pause 无令牌必须被拒（401）', JSON.stringify(p3));
   }
 
+  // ── 渲染诊断（2026-10-28「壁纸发糊」排查结论的可见化）──────────────────────
+  //  实测本机 gpu_compositing/rasterization/webgl 全是 disabled_software（SwiftShader）：
+  //  场景画布只有 960×516 却要铺 1920×1032，且 GPU 进程吃 ~1267% CPU。
+  //  这个事实既不在日志里也不在状态接口里，用户完全看不到 —— 所以钉住"面板必须暴露它"。
+  {
+    const panelSrc3 = readT('ui/dsh-ui/panel.js');
+    ok(/WEBGL_debug_renderer_info/.test(panelSrc3),
+      '渲染钉子：面板必须探测宿主真实的 WebGL 后端（否则"为什么糊"永远只有猜测）');
+    ok(/swiftshader\|llvmpipe/i.test(panelSrc3) && /渲染模式/.test(panelSrc3),
+      '渲染钉子：系统页必须显示渲染模式（软件/硬件），并识别 SwiftShader 这类软件后端');
+  }
+
   server.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
   process.stdout.write('\n通过 ' + pass + ' / 失败 ' + fail + '\n');

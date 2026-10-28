@@ -95,6 +95,7 @@ function wallpaperPanel(payload) {
     upd: null, updBusy: '', updErr: '', updMsg: '',
     // 注入状态（health.injection）+ 蒙版浓度 + 应用中的壁纸 key（「应用中…」反馈）
     inj: undefined, mask: null, maskBusy: false, reinjectBusy: false, applying: '', pauseBusy: false,
+    render: null,                 // WebGL 后端探测结果（软件渲染会让场景壁纸发糊，见 renderInfo）
   };
 
   function prefs(patch) {
@@ -538,7 +539,49 @@ function wallpaperPanel(payload) {
       + '<div class="p-row"><span class="p-row-l"><b>拉绳 Buddy</b><i>常驻窗口顶部，抓着绳子悬挂；按住可拖到任意位置，松开吸附顶边</i></span>'
       + '<span class="p-hint p-tag">' + (buddy && buddy.el && buddy.el.classList.contains('wdw-has-art') ? '立绘模式' : '矢量形象') + '</span></div>'
       + '</div>'
+      // ④ 渲染模式：场景壁纸"糊 + 烫"的真因，不在壁纸文件也不在缩放，而在宿主是否用显卡跑 WebGL。
+      //    2026-10-28 实测本机：gpu_compositing/rasterization/webgl 全是 disabled_software，
+      //    场景画布只剩 960×516（铺 1920×1032）且 GPU 进程吃 1267% CPU。用户无从得知，所以放到面板上。
+      + (function () {
+        var r = renderInfo();
+        var bad = r.software === true;
+        var short = bad ? '软件渲染（CPU）' : (r.ok ? '硬件渲染（显卡）' : '未知');
+        var tip = bad
+          ? '场景壁纸会发糊且极耗 CPU（实测 13 核）；图片/视频壁纸不受影响'
+          : (r.ok ? '场景壁纸由显卡渲染，可正常出图' : '没拿到 WebGL 后端信息');
+        return '<div class="p-sec"><span class="p-sec-t">渲染模式</span>'
+          + '<div class="p-row"><span class="p-row-l"><b>' + short + '</b><i>' + tip + '</i></span>'
+          + '<span class="p-hint p-tag">' + (r.ok ? (bad ? 'CPU' : 'GPU') : '—') + '</span></div>'
+          + (r.name ? '<div class="p-hint p-url" title="' + esc(r.name) + '">' + esc(r.name) + '</div>' : '')
+          + '</div>';
+      })()
       + '</div>';
+  }
+
+  /**
+   * 宿主实际使用的 WebGL 后端（只探测一次并缓存）。
+   * 为什么放在面板里：软件渲染是"壁纸为什么糊"的唯一硬解释，
+   * 而它既不在日志里、也不在任何状态接口里，用户完全看不到。
+   */
+  function renderInfo() {
+    if (st.render) return st.render;
+    var out = { ok: false, software: null, name: '' };
+    try {
+      var c = document.createElement('canvas');
+      var gl = c.getContext('webgl2') || c.getContext('webgl');
+      if (!gl) {
+        out.software = true;
+        out.name = 'WebGL 不可用（回退软件）';
+      } else {
+        var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+        out.name = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER) || '');
+        // SwiftShader / llvmpipe / Basic Render 都是软件后端；ANGLE(D3D11)/NVIDIA/AMD/Intel 才是显卡
+        out.software = /swiftshader|llvmpipe|softpipe|software|basic render/i.test(out.name);
+        out.ok = true;
+      }
+    } catch (e) { out.name = '检测失败：' + (e && e.message ? e.message : e); }
+    st.render = out;
+    return out;
   }
 
   function paneExtensions() {
@@ -745,7 +788,7 @@ function wallpaperPanel(payload) {
   // ── 骨架 ────────────────────────────────────────────────────────────────
   // WIRE_VER：面板结构/行为变更时 +1。重注入（CDP 重连补注入）会重建元素，
   // 避免旧闭包的事件监听与新 __wdwPanel 状态 divergence（双闭包串味）。
-  var WIRE_VER = '5';   // 5：「壁纸开关」拆成暂停/退出（DOM 结构变更，必须重建）；纯样式改动不要 bump
+  var WIRE_VER = '6';   // 6：系统页新增渲染模式诊断；5：壁纸开关拆成暂停/退出（结构变更才 bump，纯样式不要）
   function build() {
     var el = document.getElementById(ID.root);
     if (el && el.getAttribute('data-wdw-ver') !== WIRE_VER) { try { el.remove(); } catch (_) {} el = null; }
