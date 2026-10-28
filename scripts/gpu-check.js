@@ -119,7 +119,11 @@ const WEBGL_EXPR = `(() => {
   } else {
     const L = [];
     L.push('');
-    L.push('渲染后端   : ' + (out.ok ? (out.software ? (out.software === false ? '硬件（显卡）' : '软件（CPU）') : '不确定') : '无法检测（' + out.error + '）'));
+    // ⚠️ 不能写成 `out.software ? '软件' : '不确定'`：software=false（=硬件）会被当成"不确定"，
+    //    2026-10-28 首次在真机恢复硬件加速时就踩了这一下（状态全绿却报"不确定"）。
+    const verdict = out.software === true ? '软件（CPU）'
+      : (out.software === false ? '硬件（显卡）' : '不确定');
+    L.push('渲染后端   : ' + (out.ok ? verdict : '无法检测（' + out.error + '）'));
     if (out.ok) {
       L.push('WebGL      : ' + (out.webgl && out.webgl.renderer ? out.webgl.renderer : '—'));
       Object.keys(out.features).forEach((k) => L.push('  ' + k.padEnd(16) + out.features[k]));

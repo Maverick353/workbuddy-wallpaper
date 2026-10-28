@@ -1019,6 +1019,12 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '渲染钉子：降级阈值(1 次)/恢复窗口(24h) 要与宿主实现一致，写错会给出错误的排查结论');
     ok(/docs\/ops[\s\S]{0,80}|gpu-crash-info/.test(gpuSrc),
       '渲染钉子：脚本里要指到运维手册 6.2（处理步骤写在文档里，不靠记忆）');
+    // software=false（=硬件）曾被判成"不确定"：三元里只写了 truthy 分支。这类"状态正确但显示错误"最坑。
+    ok(/out\.software === false \? '硬件（显卡）'/.test(gpuSrc),
+      '渲染钉子：gpu-check 必须显式判 software===false 为硬件 —— 只写 truthy 分支会把硬件渲染报成"不确定"');
+    // 宿主重启后 CDP 常比服务晚就绪：启动那一次探测落空后必须能自愈，否则壁纸永久不出现。
+    ok(/if \(!cdpPort\) \{[\s\S]{0,200}findCdp\(\)/.test(readT('scripts/start-ui.js')),
+      '注入钉子：cdpPort 为空时重连前必须重新探测 —— 否则宿主重启后（服务先起）壁纸再也不出现');
   }
 
   server.close();

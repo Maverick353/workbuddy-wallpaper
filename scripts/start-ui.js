@@ -285,6 +285,20 @@ function startUpdateLoop(dir) {
     if (reconnecting) return;
     reconnecting = true;
     try {
+      // 宿主重启时，CDP 往往比本服务晚就绪：启动那一次探测会落空（cdpPort=0，attempts 一直是 0）。
+      // 以前这里直接拿 cdpPort 去连 → 3 次必失败 → 之后**再没有人探测** ⇒ 壁纸与面板一直不出现，
+      // 只能手动重启服务（2026-10-28 真机复现：宿主重启后 cdpPort=0，/api/inject 报"未发现 CDP 端点"）。
+      // 现在每次重连前补一次探测；探测本身只是一次 GET /json/version，开销可忽略。
+      if (!cdpPort) {
+        const cp = await findCdp();
+        if (!cp) {
+          log(reason + ' → 仍未发现 CDP 端点（宿主可能未带 --remote-debugging-port 启动），下一轮继续尝试');
+          return;
+        }
+        cdpPort = cp;
+        injectState.cdpPort = cp;
+        log('发现 CDP 端点（' + cp + '）→ 开始注入');
+      }
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           const { session: s2, target: t2 } = await hostSession(cdpPort, hooks);
