@@ -13,6 +13,7 @@ const we = require('./we.js');
 const renderer = require('./renderer.js');
 const themeCss = require('./theme-css.js');
 const update = require('./update.js');
+const pause = require('./pause.js');
 
 const PLUGIN_ID = 'workdaddy.wallpaper';
 const PLUGIN_VERSION = '1.2.3';
@@ -26,6 +27,7 @@ module.exports = {
   renderer,
   themeCss,
   update,
+  pause,
   // 常用直通
   VIDEO_EXTS: media.VIDEO_EXTS,
   MEDIA_MIME: media.MEDIA_MIME,

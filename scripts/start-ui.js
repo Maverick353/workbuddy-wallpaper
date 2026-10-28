@@ -204,6 +204,11 @@ function startUpdateLoop(dir) {
     },
     applyTheme: async (id) => {
       try {
+        // 应用壁纸 = 用户想看它：顺手解除暂停，否则"点了壁纸但没反应"（最容易被当成 bug 的路径）
+        if (core.pause.readPaused(dir).paused) {
+          core.pause.setPaused(dir, false, 'apply-theme');
+          log('应用壁纸 → 已自动解除「暂停壁纸」');
+        }
         if (!session) return { ok: false, pending: true, id, warn: '宿主未连接，壁纸已保存' };
         const theme = core.store.readThemeJson({ dataDir: dir }, id);
         await session.ev(buildBackgroundExpr(theme, id, started.port, dir));
@@ -211,6 +216,26 @@ function startUpdateLoop(dir) {
         return { ok: true, id };
       } catch (e) {
         return { ok: false, id, error: e.message };
+      }
+    },
+    // 暂停/恢复壁纸：只拆/铺背景层，服务与看门狗照常跑。
+    // 与「退出插件」（服务写 .stopped、companion 不再拉起）是两条完全独立的路径。
+    setPaused: async (on, by) => {
+      const state = core.pause.setPaused(dir, !!on, by);
+      if (!session) return { ok: true, paused: state.paused, applied: false, warn: '宿主未连接，暂停状态已保存' };
+      try {
+        if (state.paused) {
+          const removed = await session.ev(bg.backgroundUninstallExpression());
+          log('已暂停壁纸 → 拆掉背景层（移除 ' + removed + '），面板与吉祥物保留');
+          return { ok: true, paused: true, applied: true, removed };
+        }
+        const id = readCurrentThemeId(dir);
+        if (!id) return { ok: true, paused: false, applied: false, warn: '当前没有应用中的壁纸' };
+        await session.ev(buildBackgroundExpr(core.store.readThemeJson({ dataDir: dir }, id), id, started.port, dir));
+        log('已恢复壁纸 → 宿主页面（theme=' + id + '）');
+        return { ok: true, paused: false, applied: true, id };
+      } catch (e) {
+        return { ok: false, paused: state.paused, error: e.message };
       }
     },
   });
@@ -284,7 +309,10 @@ function startUpdateLoop(dir) {
     try {
       await session.ev(dshUI.dshUIExpression({ apiBase, apiToken: started.apiToken }));
       const id = readCurrentThemeId(dir);
-      if (id) {
+      // 暂停中：只补 UI，不把背景层拉回来。否则「暂停」会被 15s 自愈轮询
+      // 在一次页面重载后悄悄取消 —— 用户会以为按钮没生效。
+      const paused = core.pause.readPaused(dir).paused;
+      if (id && !paused) {
         try { await session.ev(buildBackgroundExpr(core.store.readThemeJson({ dataDir: dir }, id), id, started.port, dir)); } catch (_) {}
       }
       // 回读一次：UI 是真在页面上，还是 ev 成功了但其实没插进去

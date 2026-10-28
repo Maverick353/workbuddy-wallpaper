@@ -946,11 +946,60 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     const routesSrc = readT('server/routes.js');
     ok(/injection: ctx\.injection/.test(routesSrc), '可观测钉子：/api/wallpaper/health 必须回传 injection');
     ok(/POST', '\/api\/inject'/.test(routesSrc), '可观测钉子：POST /api/inject 路由已注册');
-    ok(/'\/api\/inject'\]/.test(readT('server/standalone.js')),
+    // ⚠️ 不要用 `/'\/api\/inject'\]/` 这种锚定数组结尾的写法 —— 只要往名单里加一项就误报，
+    //    2026-10-28 加 /api/pause 时就是这样把一条好断言弄红的。直接解析数组字面量。
+    const protLine = (readT('server/standalone.js').match(/const PROTECTED_PREFIXES = \[([^\]]*)\]/) || [])[1] || '';
+    ok(/'\/api\/inject'/.test(protLine),
       '可观测钉子：/api/inject 必须在 PROTECTED_PREFIXES 里（否则本机任意页面都能强制重注入）');
+    ok(/'\/api\/pause'/.test(protLine),
+      '可观测钉子：/api/pause 必须在 PROTECTED_PREFIXES 里（它能改变壁纸可见状态）');
     const panelSrcNow = readT('ui/dsh-ui/panel.js');
     ok(/data-act="reinject"/.test(panelSrcNow) && /mask-preset/.test(panelSrcNow) && /wdw-mask/.test(panelSrcNow),
       '可观测钉子：面板「系统」页要有「重新注入」与蒙版滑块（接口一直在，缺的是入口）');
+  }
+
+  // ── 暂停 / 退出分离（2026-10-28「关闭壁纸 ≈ 卸载」的回归钉）──────────────────
+  //  背景：旧版只有一个「关闭壁纸」= 写 .stopped + 服务退出 + companion 不再拉起，
+  //  想「先关一会儿」的用户实际执行了「卸载」，且面板一起消失、无法自救。
+  {
+    const pauseSrc = readT('core/pause.js');
+    ok(/FLAG_PAUSED = '\.paused'/.test(pauseSrc) && /FLAG_STOPPED = '\.stopped'/.test(pauseSrc),
+      '暂停钉子：暂停与退出必须是两个标志文件（.paused ≠ .stopped）—— 混用就等于回到「关闭即卸载」');
+    ok(!/\.paused/.test(readT('scripts/companion.js')),
+      '暂停钉子：companion 不得读 .paused —— 暂停期间服务与看护照常（「暂时不看」不该触发停机）');
+    const sui2 = readT('scripts/start-ui.js');
+    ok(/const paused = core\.pause\.readPaused\(dir\)\.paused/.test(sui2) && /if \(id && !paused\)/.test(sui2),
+      '暂停钉子：补注入（含 15s 自愈）在暂停态下不许把背景层拉回来，否则一次页面重载就让「暂停」失效');
+    ok(/core\.pause\.setPaused\(dir, false, 'apply-theme'\)/.test(sui2),
+      '暂停钉子：应用壁纸要自动解除暂停（否则「点了壁纸没反应」会被当成 bug）');
+    const routesSrc2 = readT('server/routes.js');
+    ok(/POST', '\/api\/pause'/.test(routesSrc2), '暂停钉子：POST /api/pause 路由已注册');
+    ok(/p === '\/api\/pause'\) return true/.test(routesSrc2), '暂停钉子：/api/pause 必须进 isApiPath（否则 404）');
+    ok(/paused: pauseState\.readPaused\(dataDir\)\.paused/.test(readT('core/store.js')),
+      '暂停钉子：/api/wallpapers 必须回传 paused（否则重开面板时按钮显示「暂停壁纸」而实际已在暂停中）');
+    const panelSrc2 = readT('ui/dsh-ui/panel.js');
+    ok(/data-act="pause-toggle"/.test(panelSrc2) && /'\/api\/pause'/.test(panelSrc2),
+      '暂停钉子：面板要有「暂停 / 恢复壁纸」入口');
+    ok(/启动\.cmd/.test(panelSrc2),
+      '暂停钉子：退出插件的确认框必须写清恢复方法（含「启动.cmd」），不能只说「再运行启动脚本」');
+
+    // 行为：暂停只落状态，绝不写 .stopped
+    const JH = Object.assign({ 'content-type': 'application/json' }, TK);
+    const p1 = await J(BASE + '/api/pause', { method: 'POST', headers: JH, body: JSON.stringify({ paused: true }) });
+    ok(p1 && p1.ok === true && p1.paused === true, '暂停钉子：POST /api/pause{paused:true} 生效', JSON.stringify(p1));
+    ok(p1 && p1.applied === false && typeof p1.warn === 'string' && p1.warn.length > 0,
+      '暂停钉子：没有注入通道时必须 applied:false + warn（不许假装成功）', String(p1 && p1.warn));
+    ok(fs.existsSync(path.join(dataDir, '.paused')),
+      '暂停钉子：.paused 必须落盘（服务重启后仍是暂停态，否则用户的「暂停」被重启吞掉）');
+    ok(!fs.existsSync(path.join(dataDir, '.stopped')),
+      '暂停钉子：暂停绝不能写 .stopped —— 写了就等于退出插件，注销重登都不回来');
+    const wl = await J(BASE + '/api/wallpapers');
+    ok(wl && wl.paused === true, '暂停钉子：/api/wallpapers 要如实回传 paused:true');
+    const p2 = await J(BASE + '/api/pause', { method: 'POST', headers: JH, body: JSON.stringify({ paused: false }) });
+    ok(p2 && p2.paused === false && !fs.existsSync(path.join(dataDir, '.paused')),
+      '暂停钉子：恢复后 .paused 被清掉');
+    const p3 = await J(BASE + '/api/pause', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ paused: true }) });
+    ok(p3 && !!p3.error, '暂停钉子：/api/pause 无令牌必须被拒（401）', JSON.stringify(p3));
   }
 
   server.close();

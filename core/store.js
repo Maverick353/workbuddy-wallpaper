@@ -14,6 +14,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const media = require('./media.js');
+const pauseState = require('./pause.js');
 
 /** 解析工作目录（允许 ctx 覆盖，默认与 daemon 的 THEMES_DIR / WALLPAPERS_DIR 完全一致）。 */
 function dirsFor(ctx) {
@@ -106,6 +107,9 @@ function listWallpapers(ctx) {
         currentWallpaper,
         weId: (currentTheme && currentTheme.weId) || null,
         currentTitle,
+        // 暂停壁纸（可逆）与退出插件（.stopped，不可逆）是两个状态。
+        // 面板要在打开时就知道"现在是暂停中"，否则按钮会显示成"暂停壁纸"却点不动。
+        paused: pauseState.readPaused(dataDir).paused,
       },
     };
   } catch (e) {

@@ -35,6 +35,7 @@ const ROUTES = [
   ['POST', '/api/we-apply'],
   ['POST', '/api/theme-bg'],
   ['POST', '/api/inject'],
+  ['POST', '/api/pause'],
   ['GET', '/api/mask'],
   ['POST', '/api/mask'],
   ['GET', '/api/fonts'],
@@ -61,6 +62,7 @@ function isApiPath(p) {
   if (p === '/api/wallpaper/health') return true;
   if (p === '/api/wallpapers' || p === '/api/custom-wallpapers' || p === '/api/we-wallpapers' || p === '/api/we-apply' || p === '/api/theme-bg' || p === '/api/mask' || p === '/api/fonts') return true;
   if (p === '/api/inject') return true;
+  if (p === '/api/pause') return true;
   if (p === '/api/update' || p === '/api/update/check' || p === '/api/update/apply' || p === '/api/update/rollback') return true;
   return false;
 }
@@ -194,6 +196,23 @@ function createRoutes(ctx) {
         .then(() => ctx.reinject())
         .then((r) => send(res, { status: r && r.ok ? 200 : 500, body: r || { ok: false } }))
         .catch((e) => send(res, { status: 500, body: { ok: false, error: (e && e.message) || String(e) } }));
+    }
+    // 暂停/恢复壁纸：可逆操作，只拆/铺背景层，**不停服务**。
+    // 与 /api/shutdown（写 .stopped、服务退出、companion 不再拉起）是两条独立路径 ——
+    // 拆开的原因见 core/pause.js 顶部注释（旧版「关闭壁纸」等于卸载，用户无法自救）。
+    if (m === 'POST' && p === '/api/pause') {
+      return ctx.readBody(req).then((body) => {
+        const want = !!(body && body.paused);
+        if (typeof ctx.setPaused !== 'function') {
+          // 独立服务/--no-inject：没有注入通道，只落状态，并如实说明"页面上不会变"
+          const st = core.pause.setPaused(ctx.dataDir, want, 'api-no-injection');
+          return send(res, { status: 200, body: { ok: true, paused: st.paused, applied: false, warn: '当前无注入通道：暂停状态已保存，页面背景不会立即变化' } });
+        }
+        return Promise.resolve()
+          .then(() => ctx.setPaused(want, 'api'))
+          .then((r) => send(res, { status: r && r.ok === false ? 500 : 200, body: r || { ok: false } }))
+          .catch((e) => send(res, { status: 500, body: { ok: false, error: (e && e.message) || String(e) } }));
+      });
     }
     if (m === 'GET' && p === '/api/wallpapers') return send(res, store.listWallpapers(c));
     if (m === 'GET' && p === '/api/custom-wallpapers') return send(res, store.listCustom(c));

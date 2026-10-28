@@ -32,6 +32,7 @@ const CATALOG = {
   'POST /api/we-apply': { desc: '应用某个 WE 壁纸（场景/视频）', auth: '否', params: 'body：id / options', ret: 'ok / applied' },
   'POST /api/theme-bg': { desc: '设置主题背景（图片/视频/场景三选一）', auth: '否', params: 'body：type / id / opacity', ret: 'ok / applied' },
   'POST /api/inject': { desc: '手动重新注入页面 UI（注入丢失时的自救入口；需注入器在运行）', auth: '是', params: '—（无请求体）', ret: 'ok / injection{ok,at,attempts,lastError}' },
+  'POST /api/pause': { desc: '暂停/恢复壁纸（可逆：只拆/铺背景层，服务与看门狗照跑；与 /api/shutdown 的 .stopped 无关）', auth: '是', params: 'body：paused=true|false', ret: 'ok / paused / applied（false 表示无注入通道，状态已存但页面不变）' },
   'GET /api/mask': { desc: '读取当前蒙版浓度', auth: '否', params: '—', ret: 'opacity' },
   'POST /api/mask': { desc: '设置蒙版浓度（0–1）', auth: '否', params: 'body：opacity', ret: 'ok / opacity' },
   'GET /api/fonts': { desc: '枚举本机已装字体（面板字体页的数据源）', auth: '否', params: '—', ret: 'fonts[]' },

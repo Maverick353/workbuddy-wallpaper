@@ -94,7 +94,7 @@ function wallpaperPanel(payload) {
     // 更新机制：「关于」页的数据 + 忙碌态 + 错误。upd 为 null 表示还没拿到过状态。
     upd: null, updBusy: '', updErr: '', updMsg: '',
     // 注入状态（health.injection）+ 蒙版浓度 + 应用中的壁纸 key（「应用中…」反馈）
-    inj: undefined, mask: null, maskBusy: false, reinjectBusy: false, applying: '',
+    inj: undefined, mask: null, maskBusy: false, reinjectBusy: false, applying: '', pauseBusy: false,
   };
 
   function prefs(patch) {
@@ -220,6 +220,11 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-btn{height:var(--wdw-ui-h);padding:0 12px;border-radius:var(--wdw-ui-radius);border:1px solid var(--wdw-glass-line);background:var(--wdw-glass-fill);color:inherit;cursor:pointer;font-size:12px;white-space:nowrap;flex:0 0 auto;transition:background var(--wdw-dur-fast),box-shadow var(--wdw-dur-fast)}',
       '#' + ID.root + ' .p-btn:hover{background:var(--wdw-glass-fill-hi);box-shadow:0 2px 8px rgba(0,0,0,.25)}',
       '#' + ID.root + ' .p-btn.wdw-primary{background:color-mix(in srgb,var(--wdw-accent) 34%,transparent);border-color:color-mix(in srgb,var(--wdw-accent) 60%,transparent)}',
+      // 危险操作（退出插件）：只做颜色区分，不缩放不抖动 —— 抖动会让误点变多。
+      '#' + ID.root + ' .p-btn.wdw-danger{border-color:rgba(239,108,108,.55);background:rgba(239,108,108,.14);color:#ff9d9d}',
+      '#' + ID.root + ' .p-btn.wdw-danger:hover{background:rgba(239,108,108,.24);box-shadow:0 2px 8px rgba(239,108,108,.22)}',
+      // 区块脚注（如"当前为暂停中"）：整段可换行，别用 .p-tag 那条 nowrap
+      '#' + ID.root + ' .p-hint.p-note{display:block;margin:2px 0 2px;line-height:1.5;white-space:normal}',
       '#' + ID.root + ' .p-btn[disabled]{opacity:.5;cursor:default}',
       // 网格卡片（壁纸缩略图）
       '#' + ID.root + ' .p-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}',
@@ -684,8 +689,17 @@ function wallpaperPanel(payload) {
       + row('当前壁纸', '', '<span class="p-hint">' + esc(st.curTitle || st.cur || '—') + '</span>')
       + '</div>'
       + '<div class="p-sec"><span class="p-sec-t">壁纸开关</span>'
-      + row('关闭壁纸', '停止服务并移除页面上的壁纸与面板（重新启用：再跑一次启动脚本）',
-        '<button class="p-btn" type="button" data-act="shutdown">关闭壁纸</button>')
+      // 拆分理由：旧版只有一个「关闭壁纸」= 写 .stopped + 服务退出 + 看门狗不再拉起，
+      // 想要「先关一会儿」的用户实际执行了「卸载」，而且面板一起消失、无法自救。
+      // 现在：暂停是纯背景层操作（服务/看门狗/面板都不动），退出才是原来的 .stopped。
+      + row(st.paused ? '恢复壁纸' : '暂停壁纸',
+        st.paused ? '重新把背景铺回页面（不影响其它状态）' : '暂时隐藏壁纸，面板与吉祥物保留，随时可恢复',
+        '<button class="p-btn' + (st.paused ? ' wdw-primary' : '') + '" type="button" data-act="pause-toggle"'
+          + (st.pauseBusy ? ' disabled' : '') + '>'
+          + (st.pauseBusy ? '处理中…' : (st.paused ? '恢复壁纸' : '暂停壁纸')) + '</button>')
+      + row('退出插件', '停止服务并移除页面上的壁纸与面板（需手动运行启动脚本才能恢复）',
+        '<button class="p-btn wdw-danger" type="button" data-act="shutdown">退出插件</button>')
+      + (st.paused ? '<div class="p-hint p-note">当前为「暂停中」：服务仍在运行，吉祥物与面板可用。</div>' : '')
       + '</div>'
       + '</div>';
   }
@@ -731,7 +745,7 @@ function wallpaperPanel(payload) {
   // ── 骨架 ────────────────────────────────────────────────────────────────
   // WIRE_VER：面板结构/行为变更时 +1。重注入（CDP 重连补注入）会重建元素，
   // 避免旧闭包的事件监听与新 __wdwPanel 状态 divergence（双闭包串味）。
-  var WIRE_VER = '4';   // 3：头部新增关闭按钮（DOM 结构变更，必须重建；纯样式改动不要 bump）
+  var WIRE_VER = '5';   // 5：「壁纸开关」拆成暂停/退出（DOM 结构变更，必须重建）；纯样式改动不要 bump
   function build() {
     var el = document.getElementById(ID.root);
     if (el && el.getAttribute('data-wdw-ver') !== WIRE_VER) { try { el.remove(); } catch (_) {} el = null; }
@@ -818,6 +832,9 @@ function wallpaperPanel(payload) {
       st.cur = d.currentWallpaper || st.cur;
       st.curWe = d.weId || st.curWe;
       st.curTitle = d.currentTitle || st.curTitle;
+      // 暂停是服务端状态（.paused 标志），必须回填：否则重开面板按钮仍显示「暂停壁纸」，
+      // 用户点了才发现"已经在暂停中"，看起来像按钮坏了。
+      if (typeof d.paused === 'boolean') st.paused = d.paused;
     });
   }
   function loadCustom() {
@@ -888,6 +905,35 @@ function wallpaperPanel(payload) {
         toast('已应用' + (title ? '：' + title : ''));
       });
     }).catch(function () { st.applying = ''; st.err = '应用失败：请求异常'; paint(); });
+  }
+  /**
+   * 暂停/恢复壁纸（可逆）。
+   * 与服务端 `.paused` 标志对齐：暂停只拆背景层，服务、看门狗、面板、吉祥物全都不受影响。
+   * 页面侧重绘由 paint() 负责 —— 按钮文案要跟着 st.paused 变，不能让用户点一个"已经生效"的按钮。
+   */
+  function setPaused(on) {
+    if (st.pauseBusy) return;
+    var want = !!on;
+    st.pauseBusy = true; st.err = '';
+    toast(want ? '正在隐藏壁纸…' : '正在恢复壁纸…', 4000);
+    return req('/api/pause', { paused: want }).then(function (d) {
+      st.pauseBusy = false;
+      // 注意：失败提示走 toast，不走 st.err —— st.err 只在「壁纸库」页渲染，
+      // 而这个按钮在「关于」页，用 st.err 的结果是"报错了但用户看不见"。
+      if (d == null) { toast('操作失败：服务未响应', 4000); paint(); return; }
+      if (d.ok === false) { toast('操作失败：' + (d.error || '未知原因'), 5000); paint(); return; }
+      st.paused = !!d.paused;
+      // 服务端没有注入通道时 applied=false：如实说明"状态记下了但页面不会变"，
+      // 不要假装成功（旧版最容易让人困惑的就是这个）。
+      if (d.applied === false) {
+        toast(d.warn || '暂停状态已保存，但当前没有注入通道，页面背景不会立即变化', 6000);
+        paint();
+        return;
+      }
+      paint();
+      toast(st.paused ? '壁纸已隐藏（可在「关于」页恢复）' : '壁纸已恢复');
+      return loadWallpapers().then(function () { paint(); });
+    }).catch(function () { st.pauseBusy = false; toast('操作失败：请求异常', 4000); paint(); });
   }
   function applyWe(id, title) {
     st.applying = String(id); st.err = '';
@@ -1000,10 +1046,17 @@ function wallpaperPanel(payload) {
             var hp = (st.upd && st.upd.homepage) || 'https://github.com/Maverick353/workbuddy-wallpaper';
             try { window.open(hp, '_blank'); } catch (_) {}
           }
+          else if (a === 'pause-toggle') { setPaused(!st.paused); }
           else if (a === 'shutdown') {
-            // 关闭壁纸：① 通知服务写 .stopped 标志并退出（companion 据此不再自动拉起）
-            //           ② 本地立即拆除注入的 UI/背景层，给用户即时反馈
-            if (window.confirm && !window.confirm('关闭壁纸？将停止壁纸服务并移除界面。\n重新启用：再次运行启动脚本即可。')) return;
+            // 退出插件（原有 .stopped 语义，未改）：服务退出 + companion 不再拉起。
+            // 确认框里必须写清「怎么回来」，并且在最后一句明确指向「暂停」这个可逆选项 ——
+            // 旧版只说"再运行启动脚本"，用户点完才发现面板也没了、找不到脚本。
+            var msg = '退出插件？\n\n'
+              + '· 壁纸服务会停止，页面上的壁纸与面板都会被移除\n'
+              + '· 不会自动恢复（注销重登也不会）\n\n'
+              + '恢复方法：打开插件安装目录，双击「启动.cmd」（或运行 node scripts/start-ui.js）。\n\n'
+              + '只想暂时隐藏壁纸？点「取消」，改用上一行的「暂停壁纸」，随时可恢复。';
+            if (window.confirm && !window.confirm(msg)) return;
             try { fetch(API + '/api/shutdown', { method: 'POST', headers: authHeaders() }).catch(function () {}); } catch (_) {}
             setTimeout(function () { try { teardownAll(); } catch (_) {} }, 200);
           }
