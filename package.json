@@ -45,7 +45,8 @@
     "verify-live": "node scripts/verify-live.js",
     "verify-apply": "node scripts/verify-apply-real.js",
     "install-skill": "node scripts/install.js",
-    "uninstall-skill": "node scripts/install.js --uninstall"
+    "uninstall-skill": "node scripts/install.js --uninstall",
+    "gpu-check": "node scripts/gpu-check.js"
   },
   "dependencies": {},
   "devDependencies": {}

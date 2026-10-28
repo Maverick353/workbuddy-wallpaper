@@ -1012,6 +1012,13 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '渲染钉子：面板必须探测宿主真实的 WebGL 后端（否则"为什么糊"永远只有猜测）');
     ok(/swiftshader\|llvmpipe/i.test(panelSrc3) && /渲染模式/.test(panelSrc3),
       '渲染钉子：系统页必须显示渲染模式（软件/硬件），并识别 SwiftShader 这类软件后端');
+    const gpuSrc = readT('scripts/gpu-check.js');
+    ok(/SystemInfo\.getInfo/.test(gpuSrc) && /gpu-crash-info\.json/.test(gpuSrc),
+      '渲染钉子：gpu-check.js 必须同时读宿主的 FeatureStatus 与 GPU 崩溃降级记录（重启无效的原因就在后者）');
+    ok(/DEGRADE_THRESHOLD = 1/.test(gpuSrc) && /RECOVER_WINDOW_MS = 86400000/.test(gpuSrc),
+      '渲染钉子：降级阈值(1 次)/恢复窗口(24h) 要与宿主实现一致，写错会给出错误的排查结论');
+    ok(/docs\/ops[\s\S]{0,80}|gpu-crash-info/.test(gpuSrc),
+      '渲染钉子：脚本里要指到运维手册 6.2（处理步骤写在文档里，不靠记忆）');
   }
 
   server.close();
