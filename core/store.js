@@ -79,8 +79,10 @@ function listWallpapers(ctx) {
     const official = files.filter((f) => !/^custom-/i.test(f));
     const custom = files.filter((f) => /^custom-/i.test(f));
     let currentWallpaper = null;
+    let currentTheme = null;
     try {
       const cur = JSON.parse(fs.readFileSync(path.join(dataDir, 'current-theme.json'), 'utf8')).id || '';
+      currentTheme = readThemeJson(ctx, cur);
       const bg = path.join(themesDir, String(cur).replace(/[^A-Za-z0-9_-]/g, '_'), 'background.webp');
       if (fs.existsSync(bg)) {
         const want = crypto.createHash('md5').update(fs.readFileSync(bg)).digest('hex');
@@ -90,6 +92,11 @@ function listWallpapers(ctx) {
         }
       }
     } catch (_) { /* noop */ }
+    const titleOf = (f) => String(f).replace(/\.[a-z0-9]+$/i, '').replace(/^(wallpaper-?0*|custom-)/, '');
+    // weId / weTitle：WE 场景与视频用的是 background.mp4|.pkg，没有 background.webp 可比对，
+    // 只能从主题 json 取 —— 缺这两个字段时面板无法标出「使用中」，且「当前壁纸」只能显示 —。
+    const currentTitle = (currentTheme && currentTheme.weTitle)
+      || (currentWallpaper ? (official.includes(currentWallpaper) ? '官方壁纸 ' + titleOf(currentWallpaper) : '自定义壁纸 ' + titleOf(currentWallpaper)) : null);
     return {
       status: 200,
       body: {
@@ -97,6 +104,8 @@ function listWallpapers(ctx) {
         wallpapers: official.map((f) => ({ name: f, type: media.isVideoName(f) ? 'video' : 'image', title: '官方壁纸 ' + String(f.replace(/\.[a-z0-9]+$/i, '')).replace(/^wallpaper-?0*/, '') })),
         customWallpapers: custom.map((f) => ({ name: f, type: media.isVideoName(f) ? 'video' : 'image', title: '自定义壁纸 ' + String(f.replace(/\.[a-z0-9]+$/i, '')).replace(/^custom-/, '') })),
         currentWallpaper,
+        weId: (currentTheme && currentTheme.weId) || null,
+        currentTitle,
       },
     };
   } catch (e) {

@@ -144,7 +144,7 @@ function wallpaperPanel(payload) {
     var css = [
       // 面板容器：悬浮岛式右滑抽屉（与侧栏悬浮岛同一视觉语言，2026-10-13 二次迭代）：
       // 四周留白 12px 脱离边缘 + 全圆角 22px + 玻璃底 + 顶部光泽 + 细边框 + 多层悬浮阴影
-      '#' + ID.root + '{position:fixed;top:12px;right:12px;height:calc(100vh - 24px);width:344px;z-index:997;display:flex;flex-direction:column;box-sizing:border-box;',
+      '#' + ID.root + '{position:fixed;top:34px;right:12px;height:calc(100vh - 46px);width:344px;z-index:997;display:flex;flex-direction:column;box-sizing:border-box;',
       '--wdw-ui-h:30px;--wdw-ui-radius:10px;--wdw-ease:cubic-bezier(0.16,1,0.3,1);--wdw-dur-fast:120ms;',
       '--wdw-ink:var(--wb-color-text-primary,#e8ecf4);--wdw-ink-2:var(--wb-color-text-secondary,rgba(232,236,244,.72));--wdw-ink-3:rgba(232,236,244,.5);',
       '--wdw-accent:var(--wb-accent,#4f8cff);',
@@ -165,7 +165,10 @@ function wallpaperPanel(payload) {
       '#' + ID.root + '.wdw-open{transform:none}',
       '#' + ID.root + ' *{box-sizing:border-box}',
       // 头部
-      '#' + ID.root + ' .p-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.10);flex:0 0 auto}',
+      '#' + ID.root + ' .p-head{display:flex;align-items:center;gap:8px;justify-content:space-between;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.10);flex:0 0 auto}',
+      // 面板关闭按钮（此前只能再点吉祥物或按 Esc；右上角又正好压着宿主窗口的关闭按钮，极易误关整个应用）
+      '#' + ID.root + ' .p-x{margin-left:auto;width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--wdw-ink-3);cursor:pointer;font-size:12px;line-height:1;padding:0;transition:background var(--wdw-dur-fast),color var(--wdw-dur-fast)}',
+      '#' + ID.root + ' .p-x:hover{background:var(--wdw-glass-fill-hi);color:var(--wdw-ink)}',
       '#' + ID.root + ' .p-title{font-size:13px;font-weight:600;flex:1}',
       // ── 页签栏（分段式玻璃轨道 + 滑动指示胶囊）──
       '#' + ID.root + ' .p-tabs{position:relative;display:flex;flex:0 0 auto;padding:3px;border-radius:12px;margin:26px 12px 6px;',
@@ -195,7 +198,8 @@ function wallpaperPanel(payload) {
       '@keyframes wdw-tab-in{from{opacity:0;transform:translateY(4px)}}',
       '@media (prefers-reduced-motion:reduce){#' + ID.root + ',#' + ID.root + ' .p-tabs__pill,#' + ID.root + ' .p-pane{transition:none;animation:none}}',
       // 窄窗口：面板仍留 8px 留白（岛式），只收缩间距与圆角
-      '@media (max-width:720px){#' + ID.root + '{top:8px;right:8px;height:calc(100vh - 16px);width:calc(100vw - 16px);border-radius:18px}}',
+      // 窄窗口（≤720 CSS px，等价于 1920 屏 @267% DPI 或小窗）：改贴边全宽，但顶部仍要让开宿主窗口控制按钮
+      '@media (max-width:720px){#' + ID.root + '{top:34px;right:8px;height:calc(100vh - 42px);width:calc(100vw - 16px);border-radius:18px}}',
       // 分组与设置行
       '#' + ID.root + ' .p-sec{display:flex;flex-direction:column;gap:8px}',
       '#' + ID.root + ' .p-sec-t{font-size:11px;color:var(--wdw-ink-3);letter-spacing:.3px}',
@@ -209,7 +213,9 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-seg button:hover{background:var(--wdw-glass-fill-hi)}',
       '#' + ID.root + ' .p-seg button.wdw-on{background:color-mix(in srgb,var(--wdw-accent) 30%,transparent);border-color:color-mix(in srgb,var(--wdw-accent) 55%,transparent);color:var(--wdw-ink);font-weight:600}',
       // 按钮
-      '#' + ID.root + ' .p-btn{height:var(--wdw-ui-h);padding:0 12px;border-radius:var(--wdw-ui-radius);border:1px solid var(--wdw-glass-line);background:var(--wdw-glass-fill);color:inherit;cursor:pointer;font-size:12px;transition:background var(--wdw-dur-fast),box-shadow var(--wdw-dur-fast)}',
+      // ⚠️ white-space:nowrap + flex:0 0 auto 不能删：在 .p-row(flex) 里中文没有词边界，
+      //    min-content 会退化成单字宽 ⇒「上传/扫描/关闭壁纸」被压成竖排两行（曾全尺寸复现）。
+      '#' + ID.root + ' .p-btn{height:var(--wdw-ui-h);padding:0 12px;border-radius:var(--wdw-ui-radius);border:1px solid var(--wdw-glass-line);background:var(--wdw-glass-fill);color:inherit;cursor:pointer;font-size:12px;white-space:nowrap;flex:0 0 auto;transition:background var(--wdw-dur-fast),box-shadow var(--wdw-dur-fast)}',
       '#' + ID.root + ' .p-btn:hover{background:var(--wdw-glass-fill-hi);box-shadow:0 2px 8px rgba(0,0,0,.25)}',
       '#' + ID.root + ' .p-btn.wdw-primary{background:color-mix(in srgb,var(--wdw-accent) 34%,transparent);border-color:color-mix(in srgb,var(--wdw-accent) 60%,transparent)}',
       '#' + ID.root + ' .p-btn[disabled]{opacity:.5;cursor:default}',
@@ -220,7 +226,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-card.wdw-cur{box-shadow:inset 0 0 0 2px var(--wdw-accent)}',
       '#' + ID.root + ' .p-card .cap{position:absolute;left:0;right:0;bottom:0;padding:3px 6px;font-size:10px;background:linear-gradient(transparent,rgba(0,0,0,.72));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '#' + ID.root + ' .p-card .badge{position:absolute;top:4px;left:4px;padding:1px 5px;border-radius:999px;font-size:9px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.18)}',
-      '#' + ID.root + ' .p-card .del{position:absolute;top:3px;right:24px;width:18px;height:18px;border-radius:50%;border:0;background:rgba(0,0,0,.55);color:#fff;cursor:pointer;font-size:11px;line-height:1;display:none}',
+      '#' + ID.root + ' .p-card .del{position:absolute;top:5px;right:31px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(0,0,0,.55);color:#fff;cursor:pointer;font-size:12px;line-height:1;display:none}',
       '#' + ID.root + ' .p-card:hover .del{display:block}',
       // ── 壁纸仓库（标签 chips + 搜索 + 收藏星标）──
       '#' + ID.root + ' .p-repo{display:flex;gap:8px;align-items:center}',
@@ -232,7 +238,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-search:focus{border-color:color-mix(in srgb,var(--wdw-accent) 60%,transparent)}',
       '#' + ID.root + ' .p-repo-count{font-size:11px;color:var(--wdw-ink-3);padding:0 2px}',
       // 收藏星标：圆形容器 + flex 居中（字体居中不能靠 default 的按钮内边距，会偏）
-      '#' + ID.root + ' .p-card .star{position:absolute;top:3px;right:3px;width:18px;height:18px;box-sizing:border-box;border-radius:50%;border:0;background:rgba(0,0,0,.5);color:#ffd166;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;text-align:center;opacity:0;transition:opacity var(--wdw-dur-fast)}',
+      '#' + ID.root + ' .p-card .star{position:absolute;top:5px;right:5px;width:22px;height:22px;box-sizing:border-box;border-radius:50%;border:0;background:rgba(0,0,0,.5);color:#ffd166;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;text-align:center;opacity:0;transition:opacity var(--wdw-dur-fast)}',
       '#' + ID.root + ' .p-card:hover .star{opacity:1}',
       '#' + ID.root + ' .p-card .star.wdw-on{opacity:1}',
       // 滑块 / 开关
@@ -245,13 +251,18 @@ function wallpaperPanel(payload) {
       // 空态 / 提示
       '#' + ID.root + ' .p-empty{padding:14px;border-radius:12px;border:1px dashed rgba(255,255,255,.20);background:var(--wdw-glass-fill);color:var(--wdw-ink-3);font-size:12px;text-align:center}',
       '#' + ID.root + ' .p-hint{font-size:11px;color:var(--wdw-ink-3)}',
+      // 作为 .p-row 右侧「状态标签」的 .p-hint（如「立绘模式」）：短标签不许被压成两行，也不许被截断，
+      // 让左侧说明去换行。注意只有短标签挂 .p-tag —— 长说明文本要能换行，不能一刀切 nowrap（会顶出横向滚动）。
+      '#' + ID.root + ' .p-row>.p-hint.p-tag{flex:0 0 auto;white-space:nowrap}',
+      // 长路径型提示（工坊目录）：可压缩 + 省略号，避免把旁边的按钮挤出去
+      '#' + ID.root + ' .p-row>.p-hint.p-path{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
       // ── 字体页：调色盘 + 可搜索字体列表 ──
       '#' + ID.root + ' .p-colorwrap{display:flex;align-items:center;gap:8px}',
       '#' + ID.root + ' input[type=color]{width:40px;height:24px;padding:0;border:1px solid var(--wdw-glass-line);border-radius:8px;background:transparent;cursor:pointer}',
       '#' + ID.root + ' input[type=color]::-webkit-color-swatch-wrapper{padding:2px}',
       '#' + ID.root + ' input[type=color]::-webkit-color-swatch{border:0;border-radius:5px}',
-      '#' + ID.root + ' .p-swatches{display:flex;flex-wrap:wrap;gap:6px;max-width:132px;justify-content:flex-end}',
-      '#' + ID.root + ' .p-swatch{width:20px;height:20px;padding:0;border-radius:6px;border:1px solid rgba(255,255,255,.28);cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25)}',
+      '#' + ID.root + ' .p-swatches{display:flex;flex-wrap:wrap;gap:6px;max-width:146px;justify-content:flex-end}',
+      '#' + ID.root + ' .p-swatch{width:22px;height:22px;padding:0;border-radius:6px;border:1px solid rgba(255,255,255,.28);cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25)}',
       '#' + ID.root + ' .p-swatch:hover{transform:scale(1.12)}',
       '#' + ID.root + ' .p-swatch.p-swatch--on{box-shadow:0 0 0 2px var(--wdw-accent,#4f8cff),0 1px 3px rgba(0,0,0,.25)}',
       '#' + ID.root + ' .p-fontlist{display:flex;flex-wrap:wrap;gap:6px;max-height:220px;overflow-y:auto;padding:6px;margin:4px 0 8px;border-radius:12px;background:var(--wdw-glass-fill,rgba(255,255,255,.05));border:1px solid var(--wdw-glass-line,rgba(255,255,255,.12))}',
@@ -264,6 +275,8 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-offline .p-btn{height:22px;padding:0 8px;font-size:11px;flex:0 0 auto}',
       // 底部
       '#' + ID.root + ' .p-foot{flex:0 0 auto;padding:9px 14px;border-top:1px solid rgba(255,255,255,.10);font-size:11px;color:var(--wdw-ink-3);display:flex;gap:8px;align-items:center}',
+      // 键盘可达：注入层默认没有焦点环（宿主 CSS 会吃掉），键盘用户看不到当前焦点
+      '#' + ID.root + ' button:focus-visible,#' + ID.root + ' input:focus-visible,#' + ID.root + ' [tabindex]:focus-visible{outline:2px solid color-mix(in srgb,var(--wdw-accent) 80%,transparent);outline-offset:2px}',
     ].join('\n');
     if (s.textContent !== css) s.textContent = css;
   }
@@ -300,8 +313,15 @@ function wallpaperPanel(payload) {
     return true;
   }
   function repoCountText() {
-    if (st.source === 'we') return (st.we && st.we.items ? st.we.items.length : 0) + ' 项';
-    return st.custom.length + ' 张';
+    // ⚠️ 必须按「当前筛选后」计数：曾直接返回 items.length ⇒ 场景 14 / 视频 1 / 图片 0 都显示「15 项」，
+    //    用户会以为筛选没生效（全尺寸复现）。
+    if (st.source === 'we') {
+      var all = (st.we && st.we.items) ? st.we.items.map(function (it) {
+        return { id: String(it.id), key: String(it.id), kind: 'we', kindOf: (it.type === 'scene' ? 'scene' : 'video'), title: it.title, type: it.type };
+      }) : [];
+      return all.filter(passFilter).length + ' 项';
+    }
+    return st.custom.filter(passFilter).length + ' 张';
   }
   /** 接口地址短文本（宿主环境 apiBase 可能缺省 → 回退常见默认值）。 */
   function apiHostText() {
@@ -367,7 +387,7 @@ function wallpaperPanel(payload) {
         + '<span class="p-hint">支持图片（png/jpg/webp/gif）与视频（mp4/webm/ogg/mov）</span>'
         + '<button class="p-btn wdw-primary" data-act="upload"' + (st.uploadBusy ? ' disabled' : '') + '>' + (st.uploadBusy ? '上传中…' : '上传') + '</button></div>';
     } else if (st.source === 'we') {
-      foot = '<div class="p-row"><span class="p-hint">' + esc(st.we && st.we.roots ? st.we.roots[0] || '' : '') + '</span>'
+      foot = '<div class="p-row"><span class="p-hint p-path">' + esc(st.we && st.we.roots ? st.we.roots[0] || '' : '') + '</span>'
         + '<button class="p-btn" data-act="scan-we"' + (st.weBusy ? ' disabled' : '') + '>' + (st.weBusy ? '扫描中…' : '扫描') + '</button></div>';
     }
 
@@ -463,7 +483,7 @@ function wallpaperPanel(payload) {
     return '<div class="p-pane">' + offlineBarHtml()
       + '<div class="p-sec"><span class="p-sec-t">吉祥物（拉绳 Buddy）</span>'
       + '<div class="p-row"><span class="p-row-l"><b>拉绳 Buddy</b><i>常驻窗口顶部，抓着绳子悬挂；按住可拖到任意位置，松开吸附顶边</i></span>'
-      + '<span class="p-hint">' + (buddy && buddy.el && buddy.el.classList.contains('wdw-has-art') ? '立绘模式' : '矢量形象') + '</span></div>'
+      + '<span class="p-hint p-tag">' + (buddy && buddy.el && buddy.el.classList.contains('wdw-has-art') ? '立绘模式' : '矢量形象') + '</span></div>'
       + '</div>'
       + '</div>';
   }
@@ -613,7 +633,7 @@ function wallpaperPanel(payload) {
       + '<div class="p-sec"><span class="p-sec-t">更新</span>' + lines.join('') + '</div>'
       + '<div class="p-sec"><span class="p-sec-t">数据</span>'
       + row('接口地址', '内核 HTTP API', '<span class="p-hint">' + esc(API.replace(/^https?:\/\//, '')) + '</span>')
-      + row('当前壁纸', '', '<span class="p-hint">' + esc(st.cur || '—') + '</span>')
+      + row('当前壁纸', '', '<span class="p-hint">' + esc(st.curTitle || st.cur || '—') + '</span>')
       + '</div>'
       + '<div class="p-sec"><span class="p-sec-t">壁纸开关</span>'
       + row('关闭壁纸', '停止服务并移除页面上的壁纸与面板（重新启用：再跑一次启动脚本）',
@@ -637,7 +657,7 @@ function wallpaperPanel(payload) {
   // ── 骨架 ────────────────────────────────────────────────────────────────
   // WIRE_VER：面板结构/行为变更时 +1。重注入（CDP 重连补注入）会重建元素，
   // 避免旧闭包的事件监听与新 __wdwPanel 状态 divergence（双闭包串味）。
-  var WIRE_VER = '2';
+  var WIRE_VER = '3';   // 3：头部新增关闭按钮（DOM 结构变更，必须重建；纯样式改动不要 bump）
   function build() {
     var el = document.getElementById(ID.root);
     if (el && el.getAttribute('data-wdw-ver') !== WIRE_VER) { try { el.remove(); } catch (_) {} el = null; }
@@ -646,7 +666,7 @@ function wallpaperPanel(payload) {
       el.id = ID.root;
       el.setAttribute('data-wdw-ver', WIRE_VER);
       el.innerHTML = [
-        '<div class="p-head"><b class="p-title">壁纸</b></div>',
+        '<div class="p-head"><b class="p-title">壁纸</b><button class="p-x" type="button" data-act="close" title="关闭面板 · Esc" aria-label="关闭面板">✕</button></div>',
         '<div class="p-tabs" role="tablist"><span class="p-tabs__pill"></span>',
         TABS.map(function (t) {
           var dot = (t.id === 'about' && st.upd && st.upd.hasUpdate) ? '<i class="p-dot"></i>' : '';
@@ -723,6 +743,7 @@ function wallpaperPanel(payload) {
       var all = d.wallpapers || [];
       st.cur = d.currentWallpaper || st.cur;
       st.curWe = d.weId || st.curWe;
+      st.curTitle = d.currentTitle || st.curTitle;
     });
   }
   function loadCustom() {
@@ -835,7 +856,8 @@ function wallpaperPanel(payload) {
           if (a === 'retry') {
             // 服务未连接提示条上的重试：重新拉取全部数据
             Promise.all([loadWallpapers(), loadCustom()]).then(function () { paint(); }).catch(function () {});
-          } else if (a === 'upload') {
+          } else if (a === 'close') { api_close(); }
+          else if (a === 'upload') {
             var f = el.querySelector('#wdw-up-file');
             if (f) f.click();
           } else if (a === 'scan-we') { loadWe(true); }

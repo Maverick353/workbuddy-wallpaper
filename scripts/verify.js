@@ -658,6 +658,22 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   ok(panelSrc.includes("req('/api/update')") && panelSrc.includes("'/api/update/check'") &&
     panelSrc.includes("'/api/update/apply'") && panelSrc.includes("'/api/update/rollback'"),
     '面板四个更新接口都接上了');
+
+  // ── 适配回归钉（2026-10-28 多尺寸/多 DPI 审计后补：7 组视口 × 7 个页面全量扫描发现的回退点）──
+  ok(/\.p-btn\{[^}]*white-space:nowrap[^}]*flex:0 0 auto/.test(panelSrc),
+    '适配钉：.p-btn 必须 nowrap + 不收缩（中文标签在 .p-row 里会被压成竖排两行，「上传/扫描/关闭壁纸」曾全尺寸复现）');
+  ok(panelSrc.includes('top:34px') && panelSrc.includes('height:calc(100vh - 46px)'),
+    '适配钉：面板顶部必须让开宿主窗口控制按钮（top:34px，否则面板盖住最小化/关闭按钮）');
+  ok(panelSrc.includes('data-act="close"') && panelSrc.includes("a === 'close'"),
+    '适配钉：面板头部要有 ✕ 关闭按钮且动作已分发（此前只能再点吉祥物或按 Esc）');
+  ok(panelSrc.includes('.p-row>.p-hint.p-tag{flex:0 0 auto;white-space:nowrap}'),
+    '适配钉：短状态标签走 .p-tag nowrap；长说明不得一刀切 nowrap（会把按钮顶出面板，实测 +54px 横向滚动）');
+  ok(panelSrc.includes('.p-body{flex:1 1 auto;min-height:0;overflow-y:auto'),
+    '适配钉：面板主体是唯一滚动容器（min-height:0 不能删，否则 flex 子项撑破面板）');
+  ok(panelSrc.includes('filter(passFilter).length'),
+    '适配钉：库计数按筛选后计数（曾恒等于总数 ⇒ 场景14/视频1/图片0 都显示「15 项」）');
+  ok(readT('core/store.js').includes('currentTitle') && readT('core/store.js').includes('weId:'),
+    '适配钉：/api/wallpapers 回传 weId + currentTitle（缺则「当前壁纸」永远显示 —，卡片无使用中标记）');
   const updCfg = JSON.parse(readT('update.json'));
   ok(Array.isArray(updCfg.feeds) && updCfg.feeds.length >= 1 && /^https:\/\//.test(updCfg.feeds[0]),
     'update.json 配了更新源且主源是 https', updCfg.feeds[0]);

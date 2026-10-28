@@ -184,7 +184,8 @@ async function applyWe(ctx, body) {
       const fit = ['cover', 'contain', 'fill'].indexOf(fitRaw) >= 0 ? fitRaw : 'cover';
       weOptions = { sceneFps, muted: body.muted === undefined ? true : !!body.muted, fit };
     }
-    store.patchThemeJson(ctx, id, { image: bgFileName, bgVideo: !isScene, bgScene: isScene, weId, weOptions: weOptions || null });
+    // weTitle 一并落盘：面板「关于 → 当前壁纸」与卡片选中态要能显示名字，否则只能显示 —
+    store.patchThemeJson(ctx, id, { image: bgFileName, bgVideo: !isScene, bgScene: isScene, weId, weTitle: found.title, weOptions: weOptions || null });
     store.writeCurrentTheme(ctx, id);
     if (ctx.log) ctx.log('应用 Wallpaper Engine ' + (isScene ? '场景' : '视频') + '壁纸 -> ' + id + '/' + bgFileName + ' (weId=' + weId + (weOptions ? ', options=' + JSON.stringify(weOptions) : '') + ')');
     if (!ctx.applyTheme) {
