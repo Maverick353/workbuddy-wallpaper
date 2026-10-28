@@ -31,6 +31,7 @@ const CATALOG = {
   'GET /api/we-wallpapers': { desc: '列出 Wallpaper Engine 库（含缓存）', auth: '否', params: 'query：refresh=1 可强刷', ret: 'items[]：id/title/type/size' },
   'POST /api/we-apply': { desc: '应用某个 WE 壁纸（场景/视频）', auth: '否', params: 'body：id / options', ret: 'ok / applied' },
   'POST /api/theme-bg': { desc: '设置主题背景（图片/视频/场景三选一）', auth: '否', params: 'body：type / id / opacity', ret: 'ok / applied' },
+  'POST /api/inject': { desc: '手动重新注入页面 UI（注入丢失时的自救入口；需注入器在运行）', auth: '是', params: '—（无请求体）', ret: 'ok / injection{ok,at,attempts,lastError}' },
   'GET /api/mask': { desc: '读取当前蒙版浓度', auth: '否', params: '—', ret: 'opacity' },
   'POST /api/mask': { desc: '设置蒙版浓度（0–1）', auth: '否', params: 'body：opacity', ret: 'ok / opacity' },
   'GET /api/fonts': { desc: '枚举本机已装字体（面板字体页的数据源）', auth: '否', params: '—', ret: 'fonts[]' },

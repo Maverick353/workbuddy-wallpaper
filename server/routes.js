@@ -34,6 +34,7 @@ const ROUTES = [
   ['GET', '/api/we-wallpapers'],
   ['POST', '/api/we-apply'],
   ['POST', '/api/theme-bg'],
+  ['POST', '/api/inject'],
   ['GET', '/api/mask'],
   ['POST', '/api/mask'],
   ['GET', '/api/fonts'],
@@ -59,6 +60,7 @@ function ctxWithDirs(ctx) {
 function isApiPath(p) {
   if (p === '/api/wallpaper/health') return true;
   if (p === '/api/wallpapers' || p === '/api/custom-wallpapers' || p === '/api/we-wallpapers' || p === '/api/we-apply' || p === '/api/theme-bg' || p === '/api/mask' || p === '/api/fonts') return true;
+  if (p === '/api/inject') return true;
   if (p === '/api/update' || p === '/api/update/check' || p === '/api/update/apply' || p === '/api/update/rollback') return true;
   return false;
 }
@@ -171,6 +173,10 @@ function createRoutes(ctx) {
         daemonVersion: ctx.version || null,
         dirs: { themes: c.themesDir, wallpapers: c.wallpapersDir, weRenderer: ctx.weRendererDir || null },
         renderer: ctx.weRendererDir ? core.rendererStatus(ctx.weRendererDir) : null,
+        // ⭐ 注入状态：服务活着 ≠ 页面里有 UI。
+        //   2026-10-28 实测：开机 45 分钟注入全丢，health 仍回 ok:true，用户与开发都无迹可寻。
+        //   这里只做"如实上报"，不参与判活（服务是否可用与注入是否在位是两件事）。
+        injection: ctx.injection && typeof ctx.injection.snapshot === 'function' ? ctx.injection.snapshot() : null,
       },
     };
   }
@@ -179,6 +185,16 @@ function createRoutes(ctx) {
   function handle(req, res, url, p) {
     const m = req.method;
     if (m === 'GET' && p === '/api/wallpaper/health') return send(res, health());
+    // 手动重新注入：注入丢了但服务还活着时的自救入口（面板「系统」页的按钮打这个）
+    if (m === 'POST' && p === '/api/inject') {
+      if (typeof ctx.reinject !== 'function') {
+        return send(res, { status: 503, body: { ok: false, error: '注入器未提供 reinject（可能是 --no-inject 模式或独立服务）' } });
+      }
+      return Promise.resolve()
+        .then(() => ctx.reinject())
+        .then((r) => send(res, { status: r && r.ok ? 200 : 500, body: r || { ok: false } }))
+        .catch((e) => send(res, { status: 500, body: { ok: false, error: (e && e.message) || String(e) } }));
+    }
     if (m === 'GET' && p === '/api/wallpapers') return send(res, store.listWallpapers(c));
     if (m === 'GET' && p === '/api/custom-wallpapers') return send(res, store.listCustom(c));
     if (m === 'POST' && p === '/api/custom-wallpapers') {

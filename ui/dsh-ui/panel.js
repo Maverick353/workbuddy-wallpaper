@@ -93,6 +93,8 @@ function wallpaperPanel(payload) {
     fonts: null, fontsLoading: false, fontQuery: '',   // 字体页：本机字体列表 + 搜索词
     // 更新机制：「关于」页的数据 + 忙碌态 + 错误。upd 为 null 表示还没拿到过状态。
     upd: null, updBusy: '', updErr: '', updMsg: '',
+    // 注入状态（health.injection）+ 蒙版浓度 + 应用中的壁纸 key（「应用中…」反馈）
+    inj: undefined, mask: null, maskBusy: false, reinjectBusy: false, applying: '',
   };
 
   function prefs(patch) {
@@ -205,7 +207,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-sec-t{font-size:11px;color:var(--wdw-ink-3);letter-spacing:.3px}',
       '#' + ID.root + ' .p-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:32px}',
       '#' + ID.root + ' .p-row-l{display:flex;flex-direction:column;gap:2px;min-width:0}',
-      '#' + ID.root + ' .p-row-l b{font-weight:500;font-size:12px}',
+      '#' + ID.root + ' .p-row-l b{font-weight:500;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}',
       '#' + ID.root + ' .p-row-l i{font-style:normal;font-size:11px;color:var(--wdw-ink-3)}',
       // 分段控件（来源切换）
       '#' + ID.root + ' .p-seg{display:flex;gap:4px}',
@@ -256,6 +258,16 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-row>.p-hint.p-tag{flex:0 0 auto;white-space:nowrap}',
       // 长路径型提示（工坊目录）：可压缩 + 省略号，避免把旁边的按钮挤出去
       '#' + ID.root + ' .p-row>.p-hint.p-path{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      // 「系统」页：注入状态点 + 蒙版滑块
+      '#' + ID.root + ' .p-st{display:inline-block;width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.35);margin-right:6px;vertical-align:1px}',
+      '#' + ID.root + ' .p-st.is-ok{background:#3ddc84;box-shadow:0 0 0 2px rgba(61,220,132,.18)}',
+      '#' + ID.root + ' .p-st.is-bad{background:#ff6b6b;box-shadow:0 0 0 2px rgba(255,107,107,.18)}',
+      '#' + ID.root + ' .p-url{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}',
+      '#' + ID.root + ' .p-range{width:100%;height:20px;margin:2px 0 4px;-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer}',
+      '#' + ID.root + ' .p-range::-webkit-slider-runnable-track{height:4px;border-radius:999px;background:linear-gradient(90deg,color-mix(in srgb,var(--wdw-accent) 70%,transparent),rgba(255,255,255,.18))}',
+      '#' + ID.root + ' .p-range::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;margin-top:-5px;border-radius:50%;background:#fff;border:0;box-shadow:0 1px 4px rgba(0,0,0,.45)}',
+      // 轻提示：底部浮一条，不占布局
+      '#' + ID.root + ' .p-toast{position:absolute;left:12px;right:12px;bottom:44px;padding:8px 10px;border-radius:10px;background:rgba(20,22,28,.94);border:1px solid rgba(255,255,255,.16);color:var(--wdw-ink);font-size:11.5px;line-height:1.45;box-shadow:0 6px 22px rgba(0,0,0,.45);animation:wdw-tab-in .18s ease-out;z-index:2;word-break:break-all}',
       // ── 字体页：调色盘 + 可搜索字体列表 ──
       '#' + ID.root + ' .p-colorwrap{display:flex;align-items:center;gap:8px}',
       '#' + ID.root + ' input[type=color]{width:40px;height:24px;padding:0;border:1px solid var(--wdw-glass-line);border-radius:8px;background:transparent;cursor:pointer}',
@@ -480,7 +492,43 @@ function wallpaperPanel(payload) {
 
   function paneSystem() {
     var buddy = window.__wdwRopeBuddy;
+    var inj = st.inj;
+    var known = inj && inj.ok !== null && inj.ok !== undefined;
+    var okNow = !!(inj && inj.ok);
+    // 注入状态：服务活着 ≠ 页面里有 UI。这条以前完全没人报（2026-10-28 事故的根因之一）
+    var stateTxt, stateCls;
+    if (inj === undefined) { stateTxt = '读取中…'; stateCls = 'p-st'; }
+    else if (!known) { stateTxt = '未知（注入器未上报）'; stateCls = 'p-st'; }
+    else if (okNow) { stateTxt = '已注入 · ' + relTime(inj.at); stateCls = 'p-st is-ok'; }
+    else { stateTxt = '未注入' + (inj.failures ? '（连续失败 ' + inj.failures + ' 次）' : ''); stateCls = 'p-st is-bad'; }
+    var errLine = (inj && !okNow && inj.lastError)
+      ? '<div class="p-err">' + esc(String(inj.lastError)) + '</div>' : '';
+
+    var pct = st.mask == null ? null : Math.round(st.mask * 100);
+    var presets = [['关', 0], ['轻', 25], ['中', 40], ['强', 60]];
+
     return '<div class="p-pane">' + offlineBarHtml()
+      // ① 页面注入
+      + '<div class="p-sec"><span class="p-sec-t">页面注入</span>'
+      + '<div class="p-row"><span class="p-row-l"><b><i class="' + stateCls + '"></i>' + stateTxt + '</b>'
+      + '<i>服务在跑不代表页面里有界面；注入丢失时点右侧重试</i></span>'
+      + '<button class="p-btn" type="button" data-act="reinject"' + (st.reinjectBusy ? ' disabled' : '') + '>' +
+      (st.reinjectBusy ? '注入中…' : '重新注入') + '</button></div>'
+      + errLine
+      + (inj && inj.pageUrl ? '<div class="p-hint p-url">' + esc(inj.pageUrl) + '</div>' : '')
+      + '</div>'
+      // ② 文字蒙版（壁纸亮时靠它保可读性；接口早就有，以前没有入口）
+      + '<div class="p-sec"><span class="p-sec-t">文字蒙版</span>'
+      + '<div class="p-row"><span class="p-row-l"><b>压暗浓度</b>'
+      + '<i>壁纸太亮导致字看不清时调高；' + (pct == null ? '读取中…' : '当前 ' + pct + '%') + '</i></span>'
+      + '<span class="p-hint p-tag">' + (pct == null ? '—' : pct + '%') + '</span></div>'
+      + '<input class="p-range" id="wdw-mask" type="range" min="0" max="70" step="5" value="' + (pct == null ? 0 : pct) + '">'
+      + '<div class="p-seg">' + presets.map(function (p) {
+        var on = pct != null && Math.abs(pct - p[1]) < 3;
+        return '<button type="button" data-act="mask-preset" data-v="' + (p[1] / 100) + '"' + (on ? ' class="wdw-on"' : '') + '>' + p[0] + '</button>';
+      }).join('') + '</div>'
+      + '</div>'
+      // ③ 吉祥物
       + '<div class="p-sec"><span class="p-sec-t">吉祥物（拉绳 Buddy）</span>'
       + '<div class="p-row"><span class="p-row-l"><b>拉绳 Buddy</b><i>常驻窗口顶部，抓着绳子悬挂；按住可拖到任意位置，松开吸附顶边</i></span>'
       + '<span class="p-hint p-tag">' + (buddy && buddy.el && buddy.el.classList.contains('wdw-has-art') ? '立绘模式' : '矢量形象') + '</span></div>'
@@ -643,21 +691,47 @@ function wallpaperPanel(payload) {
   }
 
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  /** 相对时间：注入状态要显示"多久之前注入的"，比时间戳好读 */
+  function relTime(ts) {
+    if (!ts) return '—';
+    var d = Date.now() - Number(ts);
+    if (!isFinite(d) || d < 0) return '刚刚';
+    if (d < 60000) return '刚刚';
+    if (d < 3600000) return Math.floor(d / 60000) + ' 分钟前';
+    if (d < 86400000) return Math.floor(d / 3600000) + ' 小时前';
+    return Math.floor(d / 86400000) + ' 天前';
+  }
 
   function paneHtml() {
+    // 轻提示（应用壁纸/上传完成）：挂在每个 pane 末尾，paint 重建 body 时自然跟着刷新
+    var tip = st.toast ? '<div class="p-toast">' + esc(st.toast) + '</div>' : '';
+    var body;
     switch (st.tab) {
-      case 'font': return paneFont();
-      case 'system': return paneSystem();
-      case 'extensions': return paneExtensions();
-      case 'about': return paneAbout();
-      default: return paneLibrary();
+      case 'font': body = paneFont(); break;
+      case 'system': body = paneSystem(); break;
+      case 'extensions': body = paneExtensions(); break;
+      case 'about': body = paneAbout(); break;
+      default: body = paneLibrary();
     }
+    return tip ? body.replace(/<\/div>\s*$/, tip + '</div>') : body;
+  }
+
+  /** 轻提示：默认 1.6s 自动消失；长消息给久一点 */
+  var toastTimer = null;
+  function toast(msg, ms) {
+    st.toast = msg || '';
+    if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    if (st.toast) {
+      toastTimer = setTimeout(function () { st.toast = ''; paint(); }, ms || 1600);
+      if (toastTimer.unref) toastTimer.unref();
+    }
+    paint();
   }
 
   // ── 骨架 ────────────────────────────────────────────────────────────────
   // WIRE_VER：面板结构/行为变更时 +1。重注入（CDP 重连补注入）会重建元素，
   // 避免旧闭包的事件监听与新 __wdwPanel 状态 divergence（双闭包串味）。
-  var WIRE_VER = '3';   // 3：头部新增关闭按钮（DOM 结构变更，必须重建；纯样式改动不要 bump）
+  var WIRE_VER = '4';   // 3：头部新增关闭按钮（DOM 结构变更，必须重建；纯样式改动不要 bump）
   function build() {
     var el = document.getElementById(ID.root);
     if (el && el.getAttribute('data-wdw-ver') !== WIRE_VER) { try { el.remove(); } catch (_) {} el = null; }
@@ -767,11 +841,66 @@ function wallpaperPanel(payload) {
     });
   }
 
-  function apply(name) {
-    return req('/api/theme-bg', { id: 'standalone', wallpaper: name }).then(function () { return loadWallpapers(); }).then(function () { paint(); }).catch(function () {});
+  /** 注入状态：服务活着 ≠ 页面里有 UI，两者分开报（health.injection 由注入器上报） */
+  function loadHealth() {
+    return req('/api/wallpaper/health').then(function (d) {
+      if (d == null) { st.offline = true; return; }
+      st.offline = false;
+      st.inj = (d && d.ok && d.injection) ? d.injection : (d && d.ok ? { ok: null } : null);
+    }).catch(function () {});
   }
-  function applyWe(id) {
-    return req('/api/we-apply', { id: 'standalone', weId: String(id), sceneFps: st.sceneFps, muted: true }).then(function () { return loadWallpapers(); }).then(function () { paint(); }).catch(function () {});
+  function loadMask() {
+    return req('/api/mask').then(function (d) {
+      if (d == null) { st.offline = true; return; }
+      if (d.ok) st.mask = Number(d.opacity) || 0;
+    }).catch(function () {});
+  }
+  function setMask(v) {
+    var n = Math.min(1, Math.max(0, Number(v) || 0));
+    st.maskBusy = true; st.mask = n; paint();
+    return req('/api/mask', { opacity: n }).then(function (d) {
+      st.maskBusy = false;
+      if (d && d.ok) { st.mask = Number(d.opacity) || 0; st.err = ''; }
+      else st.err = (d && d.error) || '蒙版设置失败';
+      paint();
+    }).catch(function () { st.maskBusy = false; st.err = '蒙版设置失败（服务未响应）'; paint(); });
+  }
+  function doReinject() {
+    st.reinjectBusy = true; st.err = ''; paint();
+    return req('/api/inject', {}).then(function (d) {
+      st.reinjectBusy = false;
+      if (d && d.injection) st.inj = d.injection;
+      if (!d || !d.ok) st.err = (d && d.error) || '重新注入失败（宿主可能未开启调试端口）';
+      paint();
+      return loadHealth().then(function () { paint(); });
+    }).catch(function () { st.reinjectBusy = false; st.err = '重新注入失败（服务未响应）'; paint(); });
+  }
+
+  function apply(name, title) {
+    st.applying = name; st.err = '';
+    toast('正在应用' + (title ? '：' + title : '…'), 8000);
+    return req('/api/theme-bg', { id: 'standalone', wallpaper: name }).then(function (d) {
+      st.applying = '';
+      if (d == null) { st.err = '应用失败：服务未响应'; paint(); return; }
+      if (!d.ok) { st.err = '应用失败：' + (d.error || '未知原因'); paint(); return; }
+      return loadWallpapers().then(function () {
+        paint();
+        toast('已应用' + (title ? '：' + title : ''));
+      });
+    }).catch(function () { st.applying = ''; st.err = '应用失败：请求异常'; paint(); });
+  }
+  function applyWe(id, title) {
+    st.applying = String(id); st.err = '';
+    toast('正在应用' + (title ? '：' + title : '…'), 15000);
+    return req('/api/we-apply', { id: 'standalone', weId: String(id), sceneFps: st.sceneFps, muted: true }).then(function (d) {
+      st.applying = '';
+      if (d == null) { st.err = '应用失败：服务未响应'; paint(); return; }
+      if (!d.ok) { st.err = '应用失败：' + (d.error || '未知原因'); paint(); return; }
+      return loadWallpapers().then(function () {
+        paint();
+        toast('已应用' + (d.title ? '：' + d.title : ''));
+      });
+    }).catch(function () { st.applying = ''; st.err = '应用失败：请求异常'; paint(); });
   }
 
   // ── 事件 ────────────────────────────────────────────────────────────────
@@ -845,8 +974,8 @@ function wallpaperPanel(payload) {
         }
         var card = t.closest ? t.closest('.p-card') : null;
         if (card) {
-          if (card.getAttribute('data-we')) applyWe(card.getAttribute('data-we'));
-          else if (card.getAttribute('data-name')) apply(card.getAttribute('data-name'));
+          if (card.getAttribute('data-we')) applyWe(card.getAttribute('data-we'), card.getAttribute('title') || '');
+          else if (card.getAttribute('data-name')) apply(card.getAttribute('data-name'), card.getAttribute('title') || '');
           return;
         }
         // 动作按钮
@@ -855,8 +984,10 @@ function wallpaperPanel(payload) {
           var a = act.getAttribute('data-act');
           if (a === 'retry') {
             // 服务未连接提示条上的重试：重新拉取全部数据
-            Promise.all([loadWallpapers(), loadCustom()]).then(function () { paint(); }).catch(function () {});
+            Promise.all([loadWallpapers(), loadCustom(), loadHealth(), loadMask()]).then(function () { paint(); }).catch(function () {});
           } else if (a === 'close') { api_close(); }
+          else if (a === 'reinject') { doReinject(); }
+          else if (a === 'mask-preset') { setMask(Number(act.getAttribute('data-v')) || 0); }
           else if (a === 'upload') {
             var f = el.querySelector('#wdw-up-file');
             if (f) f.click();
@@ -901,14 +1032,38 @@ function wallpaperPanel(payload) {
     el.addEventListener('change', guard(function (e) {
       var t = e.target;
       if (t.id === 'wdw-fontcolor') { setFont({ color: t.value }); paint(); return; }
+      if (t.id === 'wdw-mask') { setMask(Number(t.value) / 100); return; }
       if (t.id === 'wdw-up-file' && t.files && t.files[0]) {
         var file = t.files[0];
+        // 发送前先卡大小：服务端虽有 10MB/80MB 上限，但那是**传完之后**才拒
+        // （body 先把整个 base64 串读进内存），大文件白等一场还可能把服务拖垮。
+        var isVid = /^video\//.test(file.type || '') || /\.(mp4|webm|ogg|mov)$/i.test(file.name || '');
+        var lim = isVid ? 80 * 1024 * 1024 : 10 * 1024 * 1024;
+        if (file.size > lim) {
+          st.err = '「' + file.name + '」' + (file.size / 1048576).toFixed(1) + 'MB，超过' +
+            (isVid ? '视频 80MB' : '图片 10MB') + '上限，未上传';
+          t.value = '';
+          paint();
+          return;
+        }
         var rd = new FileReader();
-        st.uploadBusy = true; paint();
+        st.uploadBusy = true; st.err = ''; paint();
         rd.onload = function () {
-          req('/api/custom-wallpapers', { dataUrl: rd.result }).then(function () { st.uploadBusy = false; return loadCustom(); }).then(function () { paint(); }).catch(function () { st.uploadBusy = false; paint(); });
+          req('/api/custom-wallpapers', { dataUrl: rd.result }).then(function (d) {
+            st.uploadBusy = false;
+            // ⚠️ req 在 400 时也会正常 resolve（只是 ok:false）—— 以前不看 d.ok，
+            //    上传被拒（超限/格式不支持）时界面一片安静，用户以为"点了没反应"。
+            if (d == null) { st.err = '上传失败：服务未响应'; paint(); return; }
+            if (!d.ok) { st.err = '上传失败：' + (d.error || '未知原因'); paint(); return; }
+            return loadCustom().then(function () {
+              paint();
+              if (d.name) apply(d.name);   // 上传完直接应用，少一步点击
+            });
+          }).catch(function () { st.uploadBusy = false; st.err = '上传失败：请求异常'; paint(); });
         };
+        rd.onerror = function () { st.uploadBusy = false; st.err = '读不到这个文件（可能已被移动或权限不足）'; paint(); };
         rd.readAsDataURL(file);
+        t.value = '';
         return;
       }
     }));
@@ -925,6 +1080,11 @@ function wallpaperPanel(payload) {
     // 字体页首次进入时才去拉本机字体列表（不在启动时拖慢注入）
     if (id === 'font' && !(st.fonts && st.fonts.length)) {
       loadFonts().then(function () { if (st.tab === 'font') paint(); }).catch(function () {});
+    }
+    // 系统页：注入状态会变（自愈成功/失败），每次进入都重读一次
+    if (id === 'system') {
+      loadHealth().then(function () { if (st.tab === 'system') paint(); }).catch(function () {});
+      loadMask().then(function () { if (st.tab === 'system') paint(); }).catch(function () {});
     }
     // 关于页：每次进入都刷新一次更新状态（仍是先读缓存，只有过期才联网）
     if (id === 'about') {
@@ -953,7 +1113,7 @@ function wallpaperPanel(payload) {
     st.open = true;
     el.classList.add('wdw-open');
     // 服务不可达时 loadXxx 置 offline → paint 出错误态提示条（而非空白/无反应）
-    Promise.all([loadWallpapers(), loadCustom()]).then(function () { paint(); }).catch(function () {});
+    Promise.all([loadWallpapers(), loadCustom(), loadHealth(), loadMask()]).then(function () { paint(); }).catch(function () {});
     // 更新状态：读缓存立刻渲染；缓存过期才后台补检查（不阻塞打开）
     loadUpdate().then(function () { if (st.open) paint(); }).catch(function () {});
     paint();
@@ -982,7 +1142,7 @@ function wallpaperPanel(payload) {
     close: api_close,
     toggle: function (v) { if (v === undefined) { st.open ? api_close() : api_open(); } else { v ? api_open() : api_close(); } },
     setTab: setTab,
-    refresh: function () { return Promise.all([loadWallpapers(), loadCustom()]).then(function () { paint(); }).catch(function () {}); },
+    refresh: function () { return Promise.all([loadWallpapers(), loadCustom(), loadHealth(), loadMask()]).then(function () { paint(); }).catch(function () {}); },
   };
   return { ok: true, id: ID.root };
 }

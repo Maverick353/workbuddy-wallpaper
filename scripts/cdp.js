@@ -44,12 +44,22 @@ function connect(wsUrl, hooks) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
     let id = 0; const pend = new Map();
+    const timers = new Map();   // id → 超时定时器（settle/failAll 时清掉，防泄漏）
     let alive = true;   // false = 连接已终结：挂起请求全部失败、新请求直接拒绝
+
+    // ⚠️ Runtime.evaluate 本身没有超时：页面被阻塞/正在重载时，应答可能永远不来，
+    //    pend 里的 Promise 就永久悬挂。start-ui 的 15s 自愈轮询是「单飞」的（polling 标志），
+    //    一旦悬挂，轮询从此停摆 —— 2026-10-28 实测「开机 45 分钟注入全丢、health 仍报 ok」即此因。
+    //    修法：给每次求值上 8s 超时，超时 reject 的语义等同「这次求值没成功」，
+    //    调用方（轮询/注入）走已有 catch 路径，轮询标志能正常复位。
+    const EVAL_TIMEOUT_MS = Math.max(1000, Number(process.env.WBWP_CDP_TIMEOUT_MS) || 8000);
 
     /** 连接终结（幂等）：pend 全部以错误结束，调用方立刻 catch 走重连，不悬挂。 */
     const failAll = (err) => {
       if (!alive) return;
       alive = false;
+      timers.forEach((t) => { try { clearTimeout(t); } catch (_) {} });
+      timers.clear();
       const e = err instanceof Error ? err : new Error('CDP 连接已断开');
       pend.forEach((settle) => { try { settle({ fail: e }); } catch (_) {} });
       pend.clear();
@@ -75,21 +85,36 @@ function connect(wsUrl, hooks) {
     };
 
     ws.addEventListener('open', () => resolve({
-      /** 页面求值：exceptionDetails → reject；连接已断 → 立刻 reject（不发送、不悬挂）。 */
+      /** 页面求值：exceptionDetails → reject；连接已断 → 立刻 reject（不发送、不悬挂）。
+       *  超时 → reject（语义 = 这次求值没成功，调用方 catch 后走重连/重试）。 */
       ev: (expression) => new Promise((res, rej) => {
         if (!alive) return rej(new Error('CDP 连接已断开（未发送）'));
         const i = ++id;
-        pend.set(i, (m) => settle(m, false, res, rej));
+        pend.set(i, (m) => { const t = timers.get(i); if (t) { clearTimeout(t); timers.delete(i); } settle(m, false, res, rej); });
+        const timer = setTimeout(() => {
+          if (!pend.has(i)) return;          // 已 settle
+          pend.delete(i); timers.delete(i);
+          rej(new Error('CDP 求值超时 ' + EVAL_TIMEOUT_MS + 'ms（页面可能被阻塞或正在重载）'));
+        }, EVAL_TIMEOUT_MS);
+        if (timer.unref) timer.unref();
+        timers.set(i, timer);
         try { ws.send(JSON.stringify({ id: i, method: 'Runtime.evaluate', params: { expression, returnByValue: true } })); }
-        catch (e) { pend.delete(i); rej(e); }
+        catch (e) { pend.delete(i); const t = timers.get(i); if (t) { clearTimeout(t); timers.delete(i); } rej(e); }
       }),
-      /** 任意 CDP 方法（Page.reload 等）：语义同 ev，异常/断线同样 reject。 */
+      /** 任意 CDP 方法（Page.reload 等）：语义同 ev，异常/断线/超时同样 reject。 */
       call: (method, params) => new Promise((res, rej) => {
         if (!alive) return rej(new Error('CDP 连接已断开（未发送）'));
         const i = ++id;
-        pend.set(i, (m) => settle(m, true, res, rej));
+        pend.set(i, (m) => { const t = timers.get(i); if (t) { clearTimeout(t); timers.delete(i); } settle(m, true, res, rej); });
+        const timer = setTimeout(() => {
+          if (!pend.has(i)) return;
+          pend.delete(i); timers.delete(i);
+          rej(new Error('CDP ' + method + ' 超时 ' + EVAL_TIMEOUT_MS + 'ms'));
+        }, EVAL_TIMEOUT_MS);
+        if (timer.unref) timer.unref();
+        timers.set(i, timer);
         try { ws.send(JSON.stringify({ id: i, method, params: params || {} })); }
-        catch (e) { pend.delete(i); rej(e); }
+        catch (e) { pend.delete(i); const t = timers.get(i); if (t) { clearTimeout(t); timers.delete(i); } rej(e); }
       }),
       close: () => { try { ws.close(); } catch (_) {} },
       get alive() { return alive; },

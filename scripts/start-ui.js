@@ -39,7 +39,59 @@ const core = require(path.join(ROOT, 'core', 'index.js'));
 if (!require('./resolve-node.js').assertNodeOk('壁纸服务')) process.exit(1);
 
 const BOOT = Date.now();
-const log = (...a) => process.stdout.write('[start-ui] ' + a.join(' ') + '\n');
+
+// ── 日志落文件 ─────────────────────────────────────────────────────────────
+// 为什么要这样：看门狗用 `stdio:'ignore'` 拉起本进程（不能让它继承管道，否则看门狗阻塞），
+// 于是这里所有 log() 都被丢弃 —— 注入失败、重连 3 次全挂，事后一个字都查不到。
+// 2026-10-28 实测：开机 45 分钟注入全丢，`companion.log` 只有"服务已监听"，根因无迹可寻。
+// 修法：stdout 照旧（手动跑时能看见），同时追加到 <dataDir>/start-ui.log，超 1MB 下次启动轮转。
+let logFd = null;
+let logFile = '';
+const LOG_MAX_BYTES = 1024 * 1024;
+function openLog(dir) {
+  try {
+    const p = path.join(dir, 'start-ui.log');
+    try {
+      if (fs.statSync(p).size > LOG_MAX_BYTES) {
+        try { fs.unlinkSync(p + '.1'); } catch (_) {}
+        fs.renameSync(p, p + '.1');
+      }
+    } catch (_) { /* 首次运行时文件不存在，正常 */ }
+    logFd = fs.openSync(p, 'a');
+    logFile = p;
+  } catch (_) { logFd = null; }
+}
+const log = (...a) => {
+  const line = '[start-ui] ' + a.join(' ') + '\n';
+  process.stdout.write(line);
+  if (logFd != null) {
+    try { fs.writeSync(logFd, new Date().toISOString() + ' ' + line); }
+    catch (_) { logFd = null; }   // 写不进去就闭嘴，绝不因为日志打死进程
+  }
+};
+
+// ── 注入状态（给 /api/wallpaper/health 与面板「系统」页看）──────────────────
+// 之前 health 只报服务自身（永远 ok），页面里 UI 有没有在，谁都不知道。
+const injectState = {
+  ok: false,
+  at: null,          // 最后一次成功注入的时间戳
+  attempts: 0,       // 本次运行的注入尝试次数
+  failures: 0,       // 连续失败次数（成功后清零）
+  lastError: null,
+  pageUrl: '',
+  cdpPort: 0,
+  markOk(pageUrl) {
+    this.ok = true; this.at = Date.now(); this.failures = 0; this.lastError = null;
+    if (pageUrl) this.pageUrl = String(pageUrl).split('?')[0].split('#')[0].slice(0, 160);
+  },
+  markFail(err) {
+    this.ok = false; this.failures += 1;
+    this.lastError = String((err && err.message) || err || '未知错误').slice(0, 300);
+  },
+  snapshot() {
+    return { ok: this.ok, at: this.at, attempts: this.attempts, failures: this.failures, lastError: this.lastError, pageUrl: this.pageUrl, cdpPort: this.cdpPort };
+  },
+};
 
 // ── 进程级兜底（最早注册）──────────────────────────────────────────────────
 // 自愈轮询 / CDP 断线回调 / HTTP 请求处理里的任何异步异常都不得杀死进程：
@@ -131,6 +183,8 @@ function startUpdateLoop(dir) {
   const noInject = rawArgs.includes('--no-inject');
   const noWatch = rawArgs.includes('--no-watch');
   const dir = args.dataDir || dataDir();
+  openLog(dir);
+  log('== 启动 pid=' + process.pid + ' 端口=' + args.port + ' 数据目录=' + dir + ' ==');
   const seeded = seedWallpapers(dir);
 
   let session = null;
@@ -142,6 +196,12 @@ function startUpdateLoop(dir) {
     port: args.port,
     dataDir: dir,
     log: (m) => log('  [svc] ' + m),
+    // 让 /api/wallpaper/health 能看到"注入到底在不在"，并提供"重新注入"入口
+    injection: injectState,
+    reinject: () => {
+      if (!cdpPort) return Promise.resolve({ ok: false, error: '未发现 CDP 端点（宿主未以 --remote-debugging-port 启动）' });
+      return reconnectAndInject('API 手动触发').then(() => ({ ok: injectState.ok, injection: injectState.snapshot() }));
+    },
     applyTheme: async (id) => {
       try {
         if (!session) return { ok: false, pending: true, id, warn: '宿主未连接，壁纸已保存' };
@@ -178,6 +238,7 @@ function startUpdateLoop(dir) {
     return;
   }
   cdpPort = cp;
+  injectState.cdpPort = cp;
 
   // 断线即重连：ws close/error 时 cdp.js 同步回调（宿主页面 reload、target 销毁），
   // 防抖 800ms 后立即重连补注入 —— 不必等 15s 轮询。
@@ -201,8 +262,9 @@ function startUpdateLoop(dir) {
     try {
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          const { session: s2 } = await hostSession(cdpPort, hooks);
+          const { session: s2, target: t2 } = await hostSession(cdpPort, hooks);
           session = s2;
+          if (t2 && t2.url) injectState.pageUrl = String(t2.url).split('?')[0].slice(0, 160);
           await injectAll();
           log(reason + ' → 已重连并补注入');
           return;
@@ -218,19 +280,30 @@ function startUpdateLoop(dir) {
 
   const injectAll = async () => {
     if (!session) throw new Error('无 CDP 会话');
-    await session.ev(dshUI.dshUIExpression({ apiBase, apiToken: started.apiToken }));
-    const id = readCurrentThemeId(dir);
-    if (id) {
-      try { await session.ev(buildBackgroundExpr(core.store.readThemeJson({ dataDir: dir }, id), id, started.port, dir)); } catch (_) {}
+    injectState.attempts += 1;
+    try {
+      await session.ev(dshUI.dshUIExpression({ apiBase, apiToken: started.apiToken }));
+      const id = readCurrentThemeId(dir);
+      if (id) {
+        try { await session.ev(buildBackgroundExpr(core.store.readThemeJson({ dataDir: dir }, id), id, started.port, dir)); } catch (_) {}
+      }
+      // 回读一次：UI 是真在页面上，还是 ev 成功了但其实没插进去
+      const live = await session.ev('!!document.getElementById("wdw-rope-buddy")');
+      if (!live) throw new Error('注入表达式执行成功，但页面里没有 #wdw-rope-buddy');
+      injectState.markOk(injectState.pageUrl);
+      return true;
+    } catch (e) {
+      injectState.markFail(e);
+      throw e;
     }
-    return true;
   };
 
   // 首次连接/注入：失败不打死进程，转入同一套重连自愈（服务仍常驻）。
   try {
-    const { session: s } = await hostSession(cdpPort, hooks);
+    const { session: s, target: t } = await hostSession(cdpPort, hooks);
     session = s;
-    log('已连上宿主（CDP ' + cdpPort + '）');
+    if (t && t.url) injectState.pageUrl = String(t.url).split('?')[0].slice(0, 160);
+    log('已连上宿主（CDP ' + cdpPort + ' · ' + (t && t.url ? String(t.url).slice(0, 80) : '') + '）');
     await injectAll();
     const st = await session.ev('JSON.stringify({rope:!!document.getElementById("wdw-rope-buddy"),panel:!!document.getElementById("wdw-wallpaper-panel"),yield:document.body.classList.contains("wdw-dsh-ui")})');
     log('注入完成：' + st);
@@ -250,10 +323,18 @@ function startUpdateLoop(dir) {
       try {
         if (!session) throw new Error('无 CDP 会话');
         const has = await session.ev('!!document.getElementById("wdw-rope-buddy")');
-        if (!has) { await injectAll(); log('检测到页面已重载 → 已补注入'); }
-      } catch (_) {
-        // ws 断线时 session.ev 会立刻 reject（cdp.js 断线语义）→ 走主动重连
-        await reconnectAndInject('轮询发现 CDP 断线');
+        if (!has) {
+          await injectAll();
+          log('检测到页面已重载 → 已补注入');
+        } else if (!injectState.ok) {
+          // UI 在，但状态表里还是失败态（比如首注失败后页面自己恢复）→ 纠正，避免 health 一直报红
+          injectState.markOk();
+        }
+      } catch (e) {
+        // 以前这里直接把 reason 吞掉，日志里只剩"轮询发现 CDP 断线"，看不出到底是超时还是异常。
+        // cdp.js 现在有 8s 求值超时，能走到这里的只有真失败；把原因写进日志与 health。
+        log('自愈轮询失败：' + ((e && e.message) || e) + ' → 尝试重连');
+        await reconnectAndInject('轮询失败：' + ((e && e.message) || e));
       } finally {
         polling = false;
       }

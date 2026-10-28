@@ -29,7 +29,7 @@ const { createRoutes } = require('./routes.js');
 
 // ── P1-3：受保护路径与令牌 ──────────────────────────────────────────────────
 /** 需要鉴权的路径前缀（更新类 + 关机类）。其余接口暂不覆盖，见已知问题 KN-2。 */
-const PROTECTED_PREFIXES = ['/api/update', '/api/shutdown'];
+const PROTECTED_PREFIXES = ['/api/update', '/api/shutdown', '/api/inject'];
 const TOKEN_FILE = '.api-token';
 
 function isProtectedPath(p) {
@@ -121,6 +121,9 @@ function start(options = {}) {
     dataDir,
     weRendererDir,
     applyTheme: typeof options.applyTheme === 'function' ? options.applyTheme : null,
+    // 注入可见性：只有 start-ui 会传（独立服务没有注入能力，两个字段为 null，health.injection 报 null）
+    injection: options.injection || null,
+    reinject: typeof options.reinject === 'function' ? options.reinject : null,
     version: options.version || 'standalone',
     apiToken,
   };

@@ -931,6 +931,28 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '可读面钉子：大面板不许加 backdrop-filter —— 实测 18px 模糊让 GPU 进程从 425% 涨到 629%（≈2 核）');
   }
 
+  // ── 注入可观测性（2026-10-28「开机 45 分钟注入全丢、health 仍 ok」的回归钉）──
+  {
+    const cdpSrc = readT('scripts/cdp.js');
+    ok(/EVAL_TIMEOUT_MS/.test(cdpSrc) && /CDP 求值超时/.test(cdpSrc),
+      '可观测钉子：Runtime.evaluate 必须有超时（否则一次不返回就让自愈轮询永久停摆）');
+    const suiSrc = readT('scripts/start-ui.js');
+    ok(/function openLog/.test(suiSrc) && /start-ui\.log/.test(suiSrc),
+      '可观测钉子：注入器必须写 <dataDir>/start-ui.log（看门狗用 stdio:ignore 拉起，否则日志全丢）');
+    ok(/injectState\.markFail/.test(suiSrc) && /injectState\.markOk/.test(suiSrc),
+      '可观测钉子：注入成功/失败都要记状态（health.injection 的数据源）');
+    ok(/split\('\?'\)\[0\]/.test(suiSrc),
+      '可观测钉子：pageUrl 必须砍掉 query —— 宿主 URL 带 wbSeedToken/uid，摊在面板上既占行又是敏感信息');
+    const routesSrc = readT('server/routes.js');
+    ok(/injection: ctx\.injection/.test(routesSrc), '可观测钉子：/api/wallpaper/health 必须回传 injection');
+    ok(/POST', '\/api\/inject'/.test(routesSrc), '可观测钉子：POST /api/inject 路由已注册');
+    ok(/'\/api\/inject'\]/.test(readT('server/standalone.js')),
+      '可观测钉子：/api/inject 必须在 PROTECTED_PREFIXES 里（否则本机任意页面都能强制重注入）');
+    const panelSrcNow = readT('ui/dsh-ui/panel.js');
+    ok(/data-act="reinject"/.test(panelSrcNow) && /mask-preset/.test(panelSrcNow) && /wdw-mask/.test(panelSrcNow),
+      '可观测钉子：面板「系统」页要有「重新注入」与蒙版滑块（接口一直在，缺的是入口）');
+  }
+
   server.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
   process.stdout.write('\n通过 ' + pass + ' / 失败 ' + fail + '\n');
