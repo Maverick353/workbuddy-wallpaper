@@ -46,7 +46,8 @@ function cmdStatus() {
   const d = evolve.due(ROOT, cfg);
   const props = planMod.listProposals(ROOT);
   const backups = (() => { try { return fs.readdirSync(path.join(journal.dir(ROOT), 'backup')).filter((f) => !f.startsWith('.')); } catch (_) { return []; } })();
-  const lastRun = journal.last(ROOT, 'run') || journal.last(ROOT, 'run-deep');
+  const lastRun = [journal.last(ROOT, 'run'), journal.last(ROOT, 'run-deep')]
+    .filter(Boolean).sort((a, b) => new Date(b.at) - new Date(a.at))[0] || null;
   const lastApply = journal.last(ROOT, 'apply-ok');
 
   say(c.b + '自我进化 · 状态' + c.x);
