@@ -124,6 +124,27 @@ function resolveBackgroundAssets(p) {
           P + '.teams-grid-scroll-content' + X + '{background:transparent !important}',
           P + '[class*="_gridView_"]' + X + ',' + P + '[class*="_gridViewItem_"]' + X + '{background:transparent !important}',
           P + '.conversation-shell' + X + '{background:transparent !important}',
+          // ── 2026-10-28「资料库页像图片裂了」事故：页面型内容失去了可读面 ──
+          //   症状：引导卡片正中透出一块白色窗户，表格行直接浮在星空上，右侧一大片壁纸。
+          //   实测根因：卡片自带底色只有 rgba(255,255,255,.06)，表格外壳 wb-feed-content-shell 全透明，
+          //   而 wb-home-page-pc(1364) ⊃ body(1024) ⊃ dock(928) ⊃ card 四层都没有实底 ⇒ 壁纸直接穿透。
+          //   那块"窗户"是**壁纸图案**，不是图片没加载：摘掉壁纸层后白块即消失（已用像素差验证）。
+          //   修法：**只给最外层 wb-home-page-pc 一层底板**，内层显式 transparent（否则 .97 × 三层 ≈ 全黑），
+          //   卡片再抬 .07 白做层级；左侧知识库栏同款底板。
+          //   不透明度的取值是量出来的，别再往下调：
+          //     .74 → 壁纸对卡片的影响最大 69 级（窗户清晰可辨）
+          //     .92 → 最大 32 级（仍能看出窗框）
+          //     .97 → 干净（硬边的形状在 <10 级差异下看不出，人眼对边缘远比幅度敏感）
+          //   ⚠️ 也试过 .82 + backdrop-filter:blur(18px)：观感最好，但 GPU 进程从 425% 飙到 629%
+          //     （≈多烧 2 核，场景壁纸本身已在动画），代价不划算，撤掉。
+          P + '[class*="wb-home-page-pc"]' + X + '{background:rgba(13,15,20,.97) !important;border-radius:16px}',
+          P + '[class*="wb-home-page-body"]' + X + ',' + P + '[class*="wb-home-guide-dock"]' + X + '{background:transparent !important}',
+          P + '[class*="knowledge-sidebar-pc"]' + X + '{background:rgba(13,15,20,.97) !important;border-radius:16px}',
+          // 只给卡片本体（-card-pc），别用 [class*="wb-home-guide-card"] —— 那会连 -title-pc / -desc-pc
+          // 一起上色，文字底下出现一块块浅色方块（实测踩过）。
+          P + '[class*="wb-home-guide-card-pc"]' + X + '{background:rgba(255,255,255,.07) !important}',
+          P + '[class*="wb-home-guide-card-list"]' + X + ',' + P + '[class*="wb-home-guide-header"]' + X + '{background:transparent !important}',
+          P + '[class*="wb-feed-content-shell"]' + X + '{background:rgba(255,255,255,.05) !important;border-radius:12px}',
           // 2026-10-14 二轮：左侧任务栏里成片发黑的小块 —— 同样是 5.8.2 新增的不透明底 rgb(31,31,31)：
           //   小节标签 .conversation-section-label（任务/分组）、小节头 [class*="_headerTopPadding_"]、
           //   消息队列 .conversation-message-queue、短标签 [class*="_capsule_"]、
