@@ -256,14 +256,17 @@ function startUpdateLoop(dir) {
 
   // ── ② 注入（UI + 当前壁纸背景）──────────────────────────────────────────
   const cp = await findCdp();
-  if (!cp) {
+  if (cp) {
+    cdpPort = cp;
+    injectState.cdpPort = cp;
+  } else {
+    // ⚠️ 这里**绝对不能 return**：一旦 return，后面的重连与 15s 自愈轮询就全都不会建立，
+    // 而"宿主 CDP 比服务晚就绪"是开机自启的常态（服务由看门狗先拉起）⇒ 壁纸与面板永久不出现。
+    // 2026-10-28 真机踩了两次：服务活着、47851 在听、9222 也在听，但 cdpPort 恒为 0，
+    // 只能手动重启服务 —— 因为 return 之后没有任何代码会再探测。
     log('未发现 CDP 端点（候选端口 ' + CDP_CANDIDATES.join('/') + '）。');
-    log('宿主未开启远程调试时无法注入 UI —— 服务仍在运行，可直接调用 HTTP API。');
-    log('提示：WorkBuddy 需以 --remote-debugging-port=9222 启动，否则界面注入不上。');
-    return;
+    log('服务照常运行；每 15s 自动重试探测，宿主调试端口就绪后会自动注入（不必重启本服务）。');
   }
-  cdpPort = cp;
-  injectState.cdpPort = cp;
 
   // 断线即重连：ws close/error 时 cdp.js 同步回调（宿主页面 reload、target 销毁），
   // 防抖 800ms 后立即重连补注入 —— 不必等 15s 轮询。
@@ -341,7 +344,10 @@ function startUpdateLoop(dir) {
   };
 
   // 首次连接/注入：失败不打死进程，转入同一套重连自愈（服务仍常驻）。
+  // 启动时没探测到 CDP 就直接抛，让 catch 走"断线重连"（0.8s 后再探测一次），
+  // 而不是拿端口 0 去连（那会打出一条更误导的底层错误）。
   try {
+    if (!cdpPort) throw new Error('尚无 CDP 端点（宿主可能还在启动）');
     const { session: s, target: t } = await hostSession(cdpPort, hooks);
     session = s;
     if (t && t.url) injectState.pageUrl = String(t.url).split('?')[0].slice(0, 160);

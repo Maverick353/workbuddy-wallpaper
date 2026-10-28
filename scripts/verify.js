@@ -1025,6 +1025,14 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     // 宿主重启后 CDP 常比服务晚就绪：启动那一次探测落空后必须能自愈，否则壁纸永久不出现。
     ok(/if \(!cdpPort\) \{[\s\S]{0,200}findCdp\(\)/.test(readT('scripts/start-ui.js')),
       '注入钉子：cdpPort 为空时重连前必须重新探测 —— 否则宿主重启后（服务先起）壁纸再也不出现');
+    // 更根本的一条：探测失败不能 return。return 之后重连函数与 15s 轮询都不会被建立，
+    // 补探测代码再正确也是死代码（2026-10-28 因此踩了两次同样的坑）。
+    const suiSrc3 = readT('scripts/start-ui.js');
+    // 只限定启动探测那一处（带"候选端口"）：重连函数里"下一轮继续尝试"后的 return 是正常收尾。
+    ok(!/log\('未发现 CDP 端点（候选端口[\s\S]{0,200}?\n\s*return;/.test(suiSrc3),
+      '注入钉子：启动时"未发现 CDP 端点"分支里不许 return —— 一旦返回，重连与自愈轮询全都不建立');
+    ok(/每 15s 自动重试/.test(suiSrc3) || /尚无 CDP 端点/.test(suiSrc3),
+      '注入钉子：没有 CDP 时必须有"会自动重试"的路径与日志，不能静默停在服务模式');
   }
 
   server.close();
