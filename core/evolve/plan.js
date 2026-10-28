@@ -35,13 +35,14 @@ function buildId(now) {
 function buildOps(kept, opt) {
   const o = opt || {};
   if (!kept.length) return [];
+  const brief = (s, n) => { const t = String(s == null ? '' : s).replace(/\|/g, '\\|'); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
   const lines = [];
   lines.push('### ' + (o.id || buildId()) + ' 自动采集候选（' + new Date().toISOString().slice(0, 10) + '）');
   lines.push('');
   lines.push('| 相关度 | 类型 | 标题 | 来源 |');
   lines.push('|---|---|---|---|');
   for (const k of kept.slice(0, 15)) {
-    lines.push('| ' + k.relevance + ' | ' + k.kind + ' | ' + String(k.title).replace(/\|/g, '\\|').slice(0, 70) +
+    lines.push('| ' + k.relevance + ' | ' + k.kind + ' | ' + brief(k.title, 80) +
       ' | ' + k.sourceKind + ' |');
   }
   lines.push('');
