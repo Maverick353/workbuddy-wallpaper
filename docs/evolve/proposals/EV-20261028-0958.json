@@ -1,0 +1,236 @@
+{
+  "id": "EV-20261028-0958",
+  "at": "2026-10-28T01:58:07.303Z",
+  "reason": "manual(--force)",
+  "tier": "deep",
+  "surge": null,
+  "version": "1.2.3",
+  "stats": {
+    "input": 28,
+    "kept": 3,
+    "high": 0,
+    "dropped": 24,
+    "byKind": {
+      "compat": 1,
+      "other": 1,
+      "perf": 1
+    }
+  },
+  "sources": [
+    {
+      "id": "own-releases",
+      "ok": true,
+      "count": 5,
+      "ms": 898
+    },
+    {
+      "id": "own-issues",
+      "ok": true,
+      "count": 0,
+      "ms": 726
+    },
+    {
+      "id": "hn-electron",
+      "ok": true,
+      "count": 10,
+      "ms": 1807
+    },
+    {
+      "id": "hn-wallpaper",
+      "ok": true,
+      "count": 5,
+      "ms": 1622
+    },
+    {
+      "id": "electron-blog",
+      "ok": true,
+      "count": 8,
+      "ms": 5569
+    }
+  ],
+  "ops": [
+    {
+      "op": "append-doc",
+      "file": "docs/evolve/backlog.md",
+      "title": "EV-20261028-0958",
+      "body": "### EV-20261028-0958 自动采集候选（2026-10-28）\n\n| 相关度 | 类型 | 标题 | 来源 |\n|---|---|---|---|\n| 30 | compat | Electron 45 | rss |\n| 30 | other | Show HN: Wallps: set different live wallpapers for macOS desktop and l | hn |\n| 26 | perf | Migrating from Tauri to Electron: Performance Comparison | hn |\n\n- **[compat · 30] Electron 45**\n  - https://electronjs.org/blog/electron-45-0\n  - 摘要：Electron 45 has been released! It includes upgrades to Chromium 156.0.8078.48, V8 15.6, and Node v24.22.0.\n  - 建议动作：宿主/运行时升级后必做三件事：① 7 组视口跑 `_tmp/audit-pages.js` ② `probe-injection.js` 确认注入在位 ③ `verify-apply-real.js`；重点核对 `color-mix()`、`:focus-visible`、`aspect-ratio` 与 `document.hidden` 时序是否仍成立\n- **[other · 30] Show HN: Wallps: set different live wallpapers for macOS desktop and lock screen**\n  - https://deepanshumishraa.github.io/wallps/\n  - 摘要：Show HN: Wallps: set different live wallpapers for macOS desktop and lock screen macOS ties the lock screen to your desktop wallpaper, with no built-in option to set them separately. <p>What it does: \n  - 建议动作：人工判断相关性；不确定就只进 backlog，不排期\n- **[perf · 26] Migrating from Tauri to Electron: Performance Comparison**\n  - https://twitter.com/richiemcilroy/status/2087851482288640185\n  - 摘要：Migrating from Tauri to Electron: Performance Comparison\n  - 建议动作：先在 1080p + 场景壁纸下采样 GPU 进程 CPU（10s 均值）作为基线 → 应用后再采样一次；对照 `sceneFps` 档位看是否只是帧率问题\n"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "rss-RWxlY3Ryb24gNDVodHRwczov",
+      "title": "Electron 45",
+      "url": "https://electronjs.org/blog/electron-45-0",
+      "source": "electron-blog",
+      "sourceKind": "rss",
+      "ts": 1792540800000,
+      "ageDays": 7,
+      "cached": false,
+      "score": 7.6,
+      "relevance": 30,
+      "high": false,
+      "kind": "compat",
+      "hits": [
+        {
+          "goal": "g-inject",
+          "kw": "electron",
+          "where": "title"
+        }
+      ],
+      "summary": "Electron 45 has been released! It includes upgrades to Chromium 156.0.8078.48, V8 15.6, and Node v24.22.0.",
+      "dupes": 2
+    },
+    {
+      "id": "hn-49460234",
+      "title": "Show HN: Wallps: set different live wallpapers for macOS desktop and lock screen",
+      "url": "https://deepanshumishraa.github.io/wallps/",
+      "source": "hn-wallpaper",
+      "sourceKind": "hn",
+      "ts": 1787809201000,
+      "ageDays": 62,
+      "cached": false,
+      "score": 7.4,
+      "relevance": 30,
+      "high": false,
+      "kind": "other",
+      "hits": [
+        {
+          "goal": "g-perf",
+          "kw": "scene",
+          "where": "text"
+        },
+        {
+          "goal": "g-ux",
+          "kw": "ui",
+          "where": "text"
+        },
+        {
+          "goal": "g-we",
+          "kw": "live wallpaper",
+          "where": "title"
+        }
+      ],
+      "summary": "Show HN: Wallps: set different live wallpapers for macOS desktop and lock screen macOS ties the lock screen to your desktop wallpaper, with no built-in option to set them separately. <p>What it does: "
+    },
+    {
+      "id": "hn-49297086",
+      "title": "Migrating from Tauri to Electron: Performance Comparison",
+      "url": "https://twitter.com/richiemcilroy/status/2087851482288640185",
+      "source": "hn-electron",
+      "sourceKind": "hn",
+      "ts": 1786705103000,
+      "ageDays": 75,
+      "cached": false,
+      "score": 6.6,
+      "relevance": 26,
+      "high": false,
+      "kind": "perf",
+      "hits": [
+        {
+          "goal": "g-inject",
+          "kw": "electron",
+          "where": "title"
+        }
+      ],
+      "summary": "Migrating from Tauri to Electron: Performance Comparison"
+    }
+  ],
+  "dropped": [
+    {
+      "reason": "own-release(不入候选)",
+      "title": "v1.2.3 v1.2.3"
+    },
+    {
+      "reason": "own-release(不入候选)",
+      "title": "v1.2.2 v1.2.2"
+    },
+    {
+      "reason": "own-release(不入候选)",
+      "title": "v1.2.1 v1.2.1"
+    },
+    {
+      "reason": "own-release(不入候选)",
+      "title": "v1.2.0 v1.2.0"
+    },
+    {
+      "reason": "own-release(不入候选)",
+      "title": "v1.1.3 v1.1.3"
+    },
+    {
+      "reason": "out-of-window(524d)",
+      "title": "Slack, Notion, and VSCode Improved Electron App Performance"
+    },
+    {
+      "reason": "out-of-window(258d)",
+      "title": "Building High-Performance Electron Apps"
+    },
+    {
+      "reason": "out-of-window(3436d)",
+      "title": "Facts about Electron performance"
+    },
+    {
+      "reason": "out-of-window(453d)",
+      "title": "Slack, Notion, and VSCode Improved Electron App Performance – Palette Docs"
+    },
+    {
+      "reason": "out-of-window(1839d)",
+      "title": "Flutter vs. Electron Performance"
+    },
+    {
+      "reason": "out-of-window(536d)",
+      "title": "Ask HN: What's the best framework for building Mac/Windows desktop apps in 2025?"
+    },
+    {
+      "reason": "out-of-window(2719d)",
+      "title": "Ask HN: How to build a data authoring tool with spreadsheet interface"
+    },
+    {
+      "reason": "out-of-window(3276d)",
+      "title": "Bringing Native Performance to Electron"
+    },
+    {
+      "reason": "out-of-window(3277d)",
+      "title": "Bringing Native Performance to Electron with Realm"
+    },
+    {
+      "reason": "out-of-window(1194d)",
+      "title": "Octos – HTML live wallpaper engine"
+    },
+    {
+      "reason": "out-of-window(408d)",
+      "title": "Show HN: I reverse engineered macOS to allow custom Lock Screen wallpapers"
+    },
+    {
+      "reason": "out-of-window(243d)",
+      "title": "Show HN: Create custom macOS native live wallpapers by injecting SVC MOV atoms"
+    },
+    {
+      "reason": "out-of-window(243d)",
+      "title": "Show HN: MotionDesk: Physics-driven, Metal-accelerated wallpapers for macOS"
+    },
+    {
+      "reason": "low-score(5.6)",
+      "title": "Electron 43"
+    },
+    {
+      "reason": "low-score(5.6)",
+      "title": "Electron 42"
+    },
+    {
+      "reason": "out-of-window(225d)",
+      "title": "Tech Talk: How Electron went Wayland-native, and what it means for your apps"
+    },
+    {
+      "reason": "out-of-window(232d)",
+      "title": "Electron 41"
+    },
+    {
+      "reason": "out-of-window(288d)",
+      "title": "Electron 40.0.0"
+    },
+    {
+      "reason": "out-of-window(313d)",
+      "title": "Tech Talk: Improving Window Resize Behavior"
+    }
+  ]
+}

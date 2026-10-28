@@ -1,0 +1,87 @@
+name: evolve
+
+# 自我进化：定时采集外部情报 → 生成提案 → **开 issue 等人拍板**
+#
+# 这个 workflow 刻意只做两件事：跑一轮、把提案贴成 issue。
+# 它**不提交代码、不 push、不碰发布链路** —— 自动改代码的风险远大于收益，
+# 人的一次 review 比任何自动闸门都可靠。
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'      # 每周一 03:00 UTC（北京 11:00）
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: '采集强度（cheap=只看仓库动态，deep=含最佳实践源）'
+        required: false
+        default: 'deep'
+      force:
+        description: '忽略到期判断，强制执行'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: evolve
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    # 只在主仓库跑（fork 没有 issue 权限，也没必要）
+    if: github.repository == 'Maverick353/workbuddy-wallpaper'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 零依赖：不需要 npm install
+      - name: 采集并生成提案
+        id: run
+        run: |
+          set -o pipefail
+          TIER="${{ github.event.inputs.tier || 'deep' }}"
+          node scripts/evolve.js run --force --tier "$TIER" 2>&1 | tee /tmp/evolve.log
+          ID=$(grep -oE 'EV-[0-9]{8}-[0-9]{4}' /tmp/evolve.log | head -1)
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          if [ -z "$ID" ]; then echo "::error::没解析出提案 id"; exit 1; fi
+          echo "--- 提案摘要 ---"
+          head -30 "docs/evolve/proposals/$ID.md"
+
+      - name: 归档提案（artifact，便于对比多轮）
+        uses: actions/upload-artifact@v4
+        with:
+          name: proposal-${{ steps.run.outputs.id }}
+          path: docs/evolve/proposals/
+          retention-days: 90
+
+      - name: 开 issue（已存在同提案则跳过）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ID: ${{ steps.run.outputs.id }}
+        run: |
+          set -e
+          TITLE="[evolve] 进化提案 $ID"
+          if gh issue list --state open --search "\"$TITLE\" in:title" --json title --jq '.[].title' | grep -Fxq "$TITLE"; then
+            echo "已有同名 open issue，跳过"
+            exit 0
+          fi
+          {
+            echo "> 由 \`.github/workflows/evolve.yml\` 自动生成。**本 workflow 不改代码**，只出提案。"
+            echo "> 审批通过后在本机执行：\`node scripts/evolve.js apply $ID --dry-run\` → 去掉 \`--dry-run\` 真应用。"
+            echo ""
+            cat "docs/evolve/proposals/$ID.md"
+            echo ""
+            echo "---"
+            echo '```'
+            cat /tmp/evolve.log | tail -20
+            echo '```'
+          } > /tmp/body.md
+          gh issue create --title "$TITLE" --body-file /tmp/body.md --label "evolve" \
+            || gh issue create --title "$TITLE" --body-file /tmp/body.md

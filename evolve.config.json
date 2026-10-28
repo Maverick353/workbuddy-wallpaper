@@ -1,0 +1,83 @@
+{
+  "$comment": "自我进化配置。改这里等于改机器人的判断标准，改动要 review。字段说明见 docs/ops/20261028-06_doc_自我进化机制.md",
+  "version": 1,
+  "self": "Maverick353/workbuddy-wallpaper",
+
+  "goals": [
+    {
+      "id": "g-inject",
+      "title": "注入链路与自愈",
+      "weight": 1.2,
+      "keywords": ["cdp", "chrome devtools protocol", "inject", "注入", "electron", "workbuddy", "devtools", "websocket", "自愈"]
+    },
+    {
+      "id": "g-perf",
+      "title": "场景渲染成本",
+      "weight": 1,
+      "keywords": ["gpu", "cpu", "fps", "webgl", "canvas", "electron performance", "内存", "占用", "卡顿", "scene"]
+    },
+    {
+      "id": "g-ux",
+      "title": "面板可用性",
+      "weight": 1,
+      "keywords": ["ux", "ui", "accessibility", "contrast", "keyboard", "focus", "panel", "壁纸", "交互", "可读性"]
+    },
+    {
+      "id": "g-dist",
+      "title": "发布与更新",
+      "weight": 1,
+      "keywords": ["code signing", "signtool", "ed25519", "auto update", "auto-update", "electron-updater", "inno setup", "更新", "签名"]
+    },
+    {
+      "id": "g-sec",
+      "title": "安全",
+      "weight": 1.5,
+      "keywords": ["cve", "advisory", "vulnerability", "electron security", "xss", "csrf", "localhost server", "安全"]
+    },
+    {
+      "id": "g-we",
+      "title": "壁纸生态",
+      "weight": 0.8,
+      "keywords": ["wallpaper engine", "scene.pkg", "live wallpaper", "web wallpaper", "壁纸引擎"]
+    }
+  ],
+
+  "triggers": {
+    "scheduleHours": 24,
+    "deepCheckHours": 168,
+    "versionChange": true,
+    "verifyFailure": true,
+    "issueSurge": { "windowDays": 7, "min": 5 },
+    "staleApplyDays": 90
+  },
+
+  "sources": [
+    { "id": "own-releases", "type": "github-releases", "repo": "Maverick353/workbuddy-wallpaper", "perPage": 5, "tier": "cheap" },
+    { "id": "own-issues", "type": "github-issues", "repo": "Maverick353/workbuddy-wallpaper", "perPage": 20, "windowDays": 30, "tier": "cheap" },
+    { "id": "hn-electron", "type": "hn", "query": "electron performance", "perPage": 10, "tier": "deep" },
+    { "id": "hn-wallpaper", "type": "hn", "query": "live wallpaper engine", "perPage": 10, "tier": "deep" },
+    { "id": "electron-blog", "type": "rss", "url": "https://www.electronjs.org/blog/rss.xml", "perPage": 8, "tier": "deep" }
+  ],
+
+  "scoring": {
+    "minScore": 6,
+    "highScore": 12,
+    "windowDays": 180,
+    "sourceWeight": { "repo-release": 4, "repo-issue": 5, "hn": 2, "rss": 2, "file": 1 }
+  },
+
+  "limits": {
+    "maxRequests": 20,
+    "timeoutMs": 8000,
+    "cacheHours": 12
+  },
+
+  "apply": {
+    "allowedPrefixes": ["docs/", "CHANGELOG.md", "README.md"],
+    "deniedPrefixes": [".git/", "_backup/", "_tmp/", "_rollback/", "installer/", "landing/", "landing-site/", "dist/", "node_modules/", ".evolve/"],
+    "maxFiles": 3,
+    "maxLines": 120,
+    "requireCleanGit": true,
+    "minAssertions": 192
+  }
+}

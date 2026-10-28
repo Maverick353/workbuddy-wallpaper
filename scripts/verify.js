@@ -882,6 +882,44 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '结构钉：verify-live 以非 0 退出表示"发布失败"（闸门要有牙齿）');
   }
 
+  // ── 自我进化机制（evolve）：边界比功能重要，全部离线断言 ──────────────────
+  {
+    const evoCfg = JSON.parse(readT('evolve.config.json'));
+    ok(Array.isArray(evoCfg.goals) && evoCfg.goals.length >= 5 && Array.isArray(evoCfg.sources) && evoCfg.sources.length >= 3,
+      'evolve 配置：目标 ≥5 且数据源 ≥3（少于这个量判断没有意义）');
+    ok(!!evoCfg.self && evoCfg.sources.some((s) => s.repo === evoCfg.self),
+      'evolve 配置：声明了 self 仓库（自家发版必须能被识别，否则会淹没外部信号）');
+
+    const evoApply = require(path.join(ROOT, 'core', 'evolve', 'apply.js'));
+    ok(evoApply.classifyPath('docs/evolve/backlog.md', evoCfg.apply).ok,
+      'evolve 边界：docs/ 下可直接写');
+    ok(!evoApply.classifyPath('../etc/passwd', evoCfg.apply).ok && !evoApply.classifyPath('C:/Windows/x.md', evoCfg.apply).ok,
+      'evolve 边界：.. 与绝对路径一律拒（路径穿越）');
+    ok(!evoApply.classifyPath('core/store.js', evoCfg.apply).ok && !evoApply.classifyPath('ui/dsh-ui/panel.js', evoCfg.apply).ok,
+      'evolve 边界：core/ 与 ui/ 不在白名单 —— 代码永远不自动改');
+    ok(!evoApply.classifyPath('docs/x.pem', evoCfg.apply).ok && !evoApply.classifyPath('.git/config', evoCfg.apply).ok,
+      'evolve 边界：密钥类扩展名与 .git/ 硬拒');
+
+    const evoRank = require(path.join(ROOT, 'core', 'evolve', 'rank.js'));
+    const fake = [
+      { id: 'a', title: 'Electron 45 has been released', text: 'includes upgrades to Chromium 156 and Node v24', ts: Date.now() - 86400000, sourceKind: 'rss', source: 's', url: 'u1' },
+      { id: 'b', title: 'v1.2.3 v1.2.3', text: 'workbuddy wallpaper release', ts: Date.now(), sourceKind: 'repo-release', source: 's', url: 'u2', own: true },
+      { id: 'c', title: 'x', text: 'y', ts: Date.now(), sourceKind: 'hn', source: 's', url: 'u3' },
+    ];
+    const rk = evoRank.rank(fake, evoCfg, { now: Date.now() });
+    ok(rk.kept.some((k) => k.id === 'a' && k.kind === 'compat'),
+      'evolve 打分：宿主升级类被识别为 compat（要复测 Chromium 行为）');
+    ok(!rk.kept.some((k) => k.id === 'b'), 'evolve 打分：自家发版不入候选（own-release 剔除）');
+    ok(rk.dropped.some((d) => d.item && d.item.id === 'c'), 'evolve 打分：信息量不足的条目被丢弃');
+
+    const evoPlan = require(path.join(ROOT, 'core', 'evolve', 'plan.js'));
+    const evoOps = evoPlan.buildOps(rk.kept, { id: 'EV-TEST' });
+    ok(evoOps.length === 1 && evoOps[0].op === 'append-doc' && /^docs\//.test(evoOps[0].file),
+      'evolve 方案：自动可应用的操作只有 append-doc 到 docs/（代码改动永远只出建议）');
+    ok(evoApply.precheck(ROOT, { id: 'EV-TEST', ops: [{ op: 'append-doc', file: 'core/x.js', body: 'x' }] }, evoCfg, {}).ok === false,
+      'evolve 预检：越界目标在 dryRun 之前就被拒（不会出现"先备份再失败"）');
+  }
+
   server.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
   process.stdout.write('\n通过 ' + pass + ' / 失败 ' + fail + '\n');
