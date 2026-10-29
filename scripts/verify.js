@@ -953,6 +953,36 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '面板层级钉子：旧值 997 不许回来（< 1100 必穿透）');
   }
 
+  // ── 界面风格五套皮肤（2026-10-29 需求：同一插件五风格，只换视觉）──
+  {
+    const panelSrc = readT('ui/dsh-ui/panel.js');
+    const ids = ['dark-tech', 'shadow-glass', 'holo', 'neon', 'minimal'];
+    ok(ids.every((id) => panelSrc.includes("id: '" + id + "'")),
+      '皮肤钉子：五套皮肤 id 必须齐全（暗色科技/暗色玻璃/全息未来/赛博霓虹/极简浅色）');
+    ok(/data-wdw-skin="' \+ s\.id \+ '"/.test(panelSrc),
+      '皮肤钉子：皮肤选择器必须由 s.id 生成（照抄一份写死的选择器会和 SKINS 失同步）');
+    ok(/localStorage\.setItem\(LS_SKIN/.test(panelSrc) && /localStorage\.getItem\(LS_SKIN/.test(panelSrc),
+      '皮肤钉子：选择要落本地（LS_SKIN），否则重开就回默认');
+    ok(/skins: SKINS, lsSkin: LS_SKIN/.test(panelSrc),
+      '皮肤钉子：皮肤表必须走 payload —— 面板会被 toString() 注入，模块级常量在页面侧取不到（实测 4 次注入全失败）');
+    ok(/function skinId\(v\) \{\s*\n?\s*for/.test(panelSrc),
+      '皮肤钉子：非法 id 必须回落默认，别让拼错的名字把面板变成半套样式');
+    // 真正的门禁：把注入表达式构造出来，确认页面侧能解析且确实带上了皮肤表
+    (() => {
+      const panelMod = require(path.join(ROOT, 'ui', 'dsh-ui', 'panel.js'));
+      const expr = panelMod.panelExpression({ apiBase: 'http://127.0.0.1:1' });
+      ok(expr.includes('"skins":[') && expr.includes('data-wdw-skin'),
+        '皮肤钉子：注入表达式必须同时带 skins 与 data-wdw-skin（悬空引用会 ReferenceError）');
+      let parsed = true;
+      try { new Function('return ' + expr); } catch (_) { parsed = false; }
+      ok(parsed, '皮肤钉子：注入表达式必须能 New Function 解析（含 payload JSON 转义）');
+    })();
+    ok(/var WIRE_VER = '7'/.test(panelSrc),
+      '皮肤钉子：新增系统页段落属结构变更，WIRE_VER 必须为 7（旧页面靠它重建骨架）');
+    ok(!/p-card[^\n]*backdrop-filter/.test(panelSrc) && !/p-tabs[^\n]*backdrop-filter/.test(panelSrc),
+      '皮肤钉子：皮肤层不许给卡片/页签加 backdrop-filter —— 实测大面积模糊让 GPU 425% → 629%');
+  }
+
   // ── 注入可观测性（2026-10-28「开机 45 分钟注入全丢、health 仍 ok」的回归钉）──
   {
     const cdpSrc = readT('scripts/cdp.js');

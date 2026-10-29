@@ -49,6 +49,117 @@ const TABS = [
   { id: 'about', label: '关于' },
 ];
 
+// ── 界面风格（五套独立皮肤，只换视觉层：DOM 结构/交互/尺寸一律不动）──────────
+// 选择逻辑：面板根挂 data-wdw-skin，CSS 用 `#id[data-wdw-skin="x"]` 覆盖；
+// 该选择器特异性 (1,1,0) 高于基线 `#id .p-xxx` 的同名规则里需要覆盖的部分。
+// 落地约束（改这里前必读）：
+//   · 每套必须自带 --wdw-* 变量覆盖，不能依赖宿主亮/暗主题；
+//   · 浅色两套要显式改 .p-card .cap / .badge / .p-tag 的文字色，否则白底白字；
+//   · 一律不加 backdrop-filter 到 .p-card 之类大面积元素（实测 GPU 425%→629%）。
+const LS_SKIN = 'wdw.skin';
+const SKINS = [
+  {
+    id: 'dark-tech', name: '暗色科技',
+    vars: '--wdw-ink:#EDF2F7;--wdw-ink-2:rgba(214,225,235,.72);--wdw-ink-3:rgba(168,182,196,.52);'
+      + '--wdw-accent:#39D7FF;--wdw-glass-line:rgba(255,255,255,.10);--wdw-glass-fill:rgba(255,255,255,.06);'
+      + '--wdw-glass-fill-hi:rgba(255,255,255,.12);--wdw-ui-h:32px;--wdw-ui-radius:10px;',
+    css: '@S@{background:linear-gradient(180deg,rgba(30,36,42,.92),rgba(20,25,30,.94)) !important;'
+      + 'border-color:rgba(255,255,255,.09) !important;border-radius:20px !important;'
+      + 'box-shadow:0 18px 46px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.04) !important}'
+      + '@S@ .p-tabs{background:rgba(255,255,255,.04) !important;border-color:rgba(255,255,255,.07) !important}'
+      + '@S@ .p-tabs__pill{background:linear-gradient(180deg,#3FE0FF,#1FA8D0) !important;box-shadow:0 0 16px rgba(57,215,255,.45) !important}'
+      + '@S@ .p-tab.wdw-on{color:#04161D !important;font-weight:700 !important}'
+      + '@S@ .p-card{background:#2A3036 !important;border-color:rgba(255,255,255,.08) !important}'
+      + '@S@ .p-card.wdw-cur{box-shadow:inset 0 0 0 2px #39D7FF,0 0 16px rgba(57,215,255,.28) !important}'
+      + '@S@ .p-btn.wdw-primary{background:linear-gradient(180deg,#3FE0FF,#1FA8D0) !important;border-color:transparent !important;color:#04161D !important;font-weight:700 !important}'
+      + '@S@ .p-btn.wdw-danger{background:rgba(239,108,108,.12) !important;border-color:rgba(239,108,108,.45) !important;color:#FFA9A9 !important}'
+      + '@S@ .p-chips button.wdw-on{background:rgba(57,215,255,.16) !important;border-color:rgba(57,215,255,.45) !important;color:#EDF2F7 !important}'
+      + '@S@ .p-font--cur{box-shadow:inset 0 0 0 1px #39D7FF !important}'
+      + '@S@ .p-foot{background:rgba(255,255,255,.03) !important}',
+  },
+  {
+    id: 'shadow-glass', name: '暗色玻璃',
+    vars: '--wdw-ink:#E8ECF4;--wdw-ink-2:rgba(232,236,244,.72);--wdw-ink-3:rgba(232,236,244,.50);'
+      + '--wdw-accent:#4F8CFF;--wdw-glass-line:rgba(255,255,255,.12);--wdw-glass-fill:rgba(255,255,255,.07);'
+      + '--wdw-glass-fill-hi:rgba(255,255,255,.13);--wdw-ui-h:30px;--wdw-ui-radius:10px;',
+    css: '@S@{background:color-mix(in srgb,var(--wb-bg-popover,#151a22) 62%,transparent) !important;'
+      + 'border-color:rgba(255,255,255,.12) !important;border-radius:22px !important}'
+      + '@S@ .p-tabs__pill{background:color-mix(in srgb,var(--wb-bg-popover,#2a3040) 65%,transparent) !important}'
+      + '@S@ .p-btn.wdw-primary{background:color-mix(in srgb,#4F8CFF 34%,transparent) !important;border-color:color-mix(in srgb,#4F8CFF 60%,transparent) !important}',
+  },
+  {
+    id: 'holo', name: '全息未来',
+    vars: '--wdw-ink:#E8F7FF;--wdw-ink-2:rgba(196,229,255,.74);--wdw-ink-3:rgba(150,196,228,.52);'
+      + '--wdw-accent:#37C6FF;--wdw-glass-line:rgba(96,206,255,.22);--wdw-glass-fill:rgba(88,180,255,.10);'
+      + '--wdw-glass-fill-hi:rgba(120,214,255,.20);--wdw-ui-h:32px;--wdw-ui-radius:10px;',
+    css: '@S@{background:linear-gradient(180deg,rgba(12,32,64,.88),rgba(6,18,40,.90)) !important;'
+      + 'border-color:rgba(96,206,255,.34) !important;border-radius:18px !important;'
+      + 'box-shadow:0 0 0 1px rgba(96,206,255,.10),0 18px 48px rgba(0,10,30,.62),0 0 42px rgba(59,168,255,.22) !important}'
+      + '@S@ .p-tabs{background:rgba(88,180,255,.10) !important;border-color:rgba(96,206,255,.22) !important}'
+      + '@S@ .p-tabs__pill{background:linear-gradient(135deg,#37C6FF,#7A5CFF) !important;box-shadow:0 0 18px rgba(80,170,255,.55) !important}'
+      + '@S@ .p-tab.wdw-on{color:#04121F !important;font-weight:700 !important}'
+      + '@S@ .p-card{border-color:rgba(96,206,255,.28) !important;box-shadow:inset 0 0 0 1px rgba(96,206,255,.06) !important}'
+      + '@S@ .p-card.wdw-cur{box-shadow:inset 0 0 0 2px #37C6FF,0 0 22px rgba(55,198,255,.35) !important}'
+      + '@S@ .p-btn{border-color:rgba(96,206,255,.22) !important}'
+      + '@S@ .p-btn.wdw-primary{background:linear-gradient(135deg,rgba(55,198,255,.92),rgba(122,92,255,.92)) !important;border-color:transparent !important;color:#04121F !important;font-weight:700 !important;box-shadow:0 0 14px rgba(55,198,255,.28) !important}'
+      + '@S@ .p-btn.wdw-danger{background:rgba(255,107,138,.14) !important;border-color:rgba(255,107,138,.55) !important;color:#FFC2CE !important}'
+      + '@S@ .p-chips button.wdw-on{background:linear-gradient(135deg,rgba(55,198,255,.32),rgba(122,92,255,.32)) !important;border-color:rgba(96,206,255,.55) !important;color:#E8F7FF !important}'
+      + '@S@ .p-title{letter-spacing:.6px}'
+      + '@S@ .p-foot{background:rgba(88,180,255,.06) !important}',
+  },
+  {
+    id: 'neon', name: '赛博霓虹',
+    vars: '--wdw-ink:#F6EBFF;--wdw-ink-2:rgba(220,190,255,.76);--wdw-ink-3:rgba(170,140,210,.55);'
+      + '--wdw-accent:#00E5FF;--wdw-glass-line:rgba(180,110,255,.28);--wdw-glass-fill:rgba(150,80,255,.12);'
+      + '--wdw-glass-fill-hi:rgba(190,110,255,.22);--wdw-ui-h:32px;--wdw-ui-radius:10px;',
+    css: '@S@{background:linear-gradient(180deg,rgba(28,10,44,.86),rgba(14,6,26,.90)) !important;'
+      + 'border-color:rgba(255,46,209,.45) !important;border-radius:20px !important;'
+      + 'box-shadow:0 0 0 1px rgba(0,229,255,.20),0 0 36px rgba(255,46,209,.28),0 0 64px rgba(122,60,255,.22),0 20px 50px rgba(0,0,0,.6) !important}'
+      + '@S@ .p-tabs{background:rgba(60,20,90,.45) !important;border-color:rgba(180,110,255,.35) !important}'
+      + '@S@ .p-tabs__pill{background:linear-gradient(135deg,#00E5FF,#FF2ED1) !important;box-shadow:0 0 20px rgba(0,229,255,.55) !important}'
+      + '@S@ .p-tab.wdw-on{color:#12031C !important;font-weight:800 !important}'
+      + '@S@ .p-title{letter-spacing:1.4px;text-shadow:0 0 12px rgba(0,229,255,.55)}'
+      + '@S@ .p-card{border-color:rgba(0,229,255,.45) !important;box-shadow:0 0 12px rgba(0,229,255,.22) !important}'
+      + '@S@ .p-card.wdw-cur{box-shadow:0 0 0 1px #FF2ED1,0 0 20px rgba(255,46,209,.45) !important}'
+      + '@S@ .p-card .badge{background:rgba(255,46,209,.28) !important;border-color:rgba(255,46,209,.6) !important}'
+      + '@S@ .p-btn{border-color:rgba(180,110,255,.35) !important}'
+      + '@S@ .p-btn.wdw-primary{background:linear-gradient(135deg,rgba(0,229,255,.9),rgba(255,46,209,.9)) !important;border-color:transparent !important;color:#12031C !important;font-weight:800 !important}'
+      + '@S@ .p-btn.wdw-danger{background:rgba(255,46,209,.16) !important;border-color:rgba(255,46,209,.60) !important;color:#FFB3EC !important}'
+      + '@S@ .p-chips button.wdw-on{background:rgba(0,229,255,.18) !important;border-color:rgba(0,229,255,.55) !important;color:#F6EBFF !important}'
+      + '@S@ .p-foot{background:rgba(60,20,90,.35) !important}',
+  },
+  {
+    id: 'minimal', name: '极简浅色',
+    vars: '--wdw-ink:#1E1F22;--wdw-ink-2:#6B7280;--wdw-ink-3:#9AA1AC;'
+      + '--wdw-accent:#2B6BFF;--wdw-glass-line:#E7E9EE;--wdw-glass-fill:#F5F6F8;'
+      + '--wdw-glass-fill-hi:#EDEFF3;--wdw-ui-h:30px;--wdw-ui-radius:8px;',
+    css: '@S@{background:#FFFFFF !important;border-color:#ECEDEF !important;border-radius:16px !important;'
+      + 'box-shadow:0 10px 30px rgba(20,30,50,.08),0 2px 6px rgba(20,30,50,.05) !important}'
+      + '@S@ .p-head{border-bottom-color:#ECEDEF !important}'
+      + '@S@ .p-tabs{background:transparent !important;border-color:#ECEDEF !important;border-radius:0 !important}'
+      + '@S@ .p-tabs__pill{display:none !important}'
+      + '@S@ .p-tab.wdw-on{color:#1E1F22 !important;font-weight:600 !important;box-shadow:inset 0 -2px 0 0 #2B6BFF !important}'
+      + '@S@ .p-card{background:#F2F3F5 !important;border-color:#E7E9EE !important;box-shadow:none !important}'
+      + '@S@ .p-card.wdw-cur{box-shadow:inset 0 0 0 2px #2B6BFF !important}'
+      + '@S@ .p-card .cap{background:rgba(255,255,255,.94) !important;color:#1E1F22 !important;font-weight:500 !important}'
+      + '@S@ .p-card .badge{background:#FFFFFF !important;border-color:#E3E6EB !important;color:#374151 !important}'
+      + '@S@ .p-card .del{background:#FFFFFF !important;color:#6B7280 !important;border:1px solid #E3E6EB !important}'
+      + '@S@ .p-btn{background:#FFFFFF !important;border-color:#E3E6EB !important;color:#374151 !important}'
+      + '@S@ .p-btn.wdw-primary{background:#2B6BFF !important;border-color:#2B6BFF !important;color:#FFFFFF !important;font-weight:600 !important}'
+      + '@S@ .p-btn.wdw-danger{background:#FFF5F5 !important;border-color:#F3C9C9 !important;color:#D9534F !important}'
+      + '@S@ .p-x{color:#9AA1AC !important}'
+      + '@S@ .p-chips button.wdw-on{background:#2B6BFF !important;border-color:#2B6BFF !important;color:#FFFFFF !important}'
+      + '@S@ .p-font--cur{box-shadow:inset 0 0 0 1px #2B6BFF !important;color:#1E1F22 !important}'
+      + '@S@ .p-hint.p-tag{background:#F2F3F5 !important;border-color:#E7E9EE !important;color:#6B7280 !important}'
+      + '@S@ .p-foot{background:#FCFCFD !important;border-top-color:#ECEDEF !important}',
+  },
+];
+/** 皮肤 id 合法性（页面侧同名函数见 wallpaperPanel 内；这里供 Node 侧/测试用）。 */
+function skinId(v) {
+  for (var i = 0; i < SKINS.length; i++) if (SKINS[i].id === v) return v;
+  return 'dark-tech';
+}
+
 /** 字体页常量。颜色 '' = 不覆盖（跟随主题）；其余是 #rrggbb。字体列表由服务端 /api/fonts 提供。 */
 const LS_FONT = 'wdw.font';
 const FONT_COLORS = [['#ffffff', '纯白'], ['#000000', '纯黑'], ['', '默认']];
@@ -68,6 +179,23 @@ function wallpaperPanel(payload) {
   var FILTERS = payload.filters;
   // 字体页常量（必须走 payload —— 本函数会被 toString() 注入，模块级常量取不到）
   var LS_FONT = payload.lsFont, FONT_COLORS = payload.fontColors, FONT_SWATCHES = payload.fontSwatches || [];
+  // 皮肤表同理必须走 payload：2026-10-29 首版把 SKINS/skinCss 留在模块级，
+  // 注入后 page 侧直接 ReferenceError: skinCss is not defined（注入 4 次全失败，health.injection 抓到）。
+  var SKINS = payload.skins || [];
+  var LS_SKIN = payload.lsSkin || 'wdw.skin';
+  function skinId(v) {
+    for (var i = 0; i < SKINS.length; i++) if (SKINS[i].id === v) return v;
+    return (SKINS[0] && SKINS[0].id) || 'dark-tech';
+  }
+  function skinCss() {
+    var out = [];
+    for (var i = 0; i < SKINS.length; i++) {
+      var s = SKINS[i];
+      var sel = '#' + ID.root + '[data-wdw-skin="' + s.id + '"]';
+      out.push(sel + '{' + s.vars + '}' + s.css.split('@S@').join(sel));
+    }
+    return out.join('\n');
+  }
   // 宿主环境：闭包里存在 api(path, opts)（自带 X-WorkDaddy-Token）。独立环境取不到 → 走 fetch。
   // typeof 对未声明变量安全；payload.hostApi 为假时短路，连 typeof 都不求值。
   var HOST_API = payload.hostApi && typeof api === 'function' ? api : null;
@@ -83,6 +211,8 @@ function wallpaperPanel(payload) {
   var st = {
     open: false,
     tab: (function () { try { var v = localStorage.getItem(LS_TAB); return TABS.some(function (t) { return t.id === v; }) ? v : 'library'; } catch (_) { return 'library'; } })(),
+    // 皮肤：本机偏好（localStorage），非法值回落 dark-tech；切换只改属性，不重建 DOM
+    skin: (function () { try { return skinId(localStorage.getItem(LS_SKIN) || ''); } catch (_) { return 'dark-tech'; } })(),
     source: 'custom',            // library 页的来源分段（自定义 / WE 库）
     official: [], custom: [], we: null, weBusy: false,
     cur: '', interactive: true, videoMode: 'stream', sceneFps: 30, paused: false,
@@ -298,7 +428,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-foot{flex:0 0 auto;padding:9px 14px;border-top:1px solid rgba(255,255,255,.10);font-size:11px;color:var(--wdw-ink-3);display:flex;gap:8px;align-items:center}',
       // 键盘可达：注入层默认没有焦点环（宿主 CSS 会吃掉），键盘用户看不到当前焦点
       '#' + ID.root + ' button:focus-visible,#' + ID.root + ' input:focus-visible,#' + ID.root + ' [tabindex]:focus-visible{outline:2px solid color-mix(in srgb,var(--wdw-accent) 80%,transparent);outline-offset:2px}',
-    ].join('\n');
+    ].join('\n') + '\n' + skinCss();
     if (s.textContent !== css) s.textContent = css;
   }
 
@@ -537,7 +667,18 @@ function wallpaperPanel(payload) {
         return '<button type="button" data-act="mask-preset" data-v="' + (p[1] / 100) + '"' + (on ? ' class="wdw-on"' : '') + '>' + p[0] + '</button>';
       }).join('') + '</div>'
       + '</div>'
-      // ③ 吉祥物
+      // ③ 界面风格：五套独立皮肤，只换视觉层（结构/交互/尺寸不动），选择落本机
+      + '<div class="p-sec"><span class="p-sec-t">界面风格</span>'
+      + '<div class="p-chips" role="radiogroup" aria-label="界面风格">'
+      + SKINS.map(function (s) {
+        var on = s.id === skinId(st.skin);
+        return '<button type="button" role="radio" aria-checked="' + on + '" data-skin="' + s.id + '"'
+          + (on ? ' class="wdw-on"' : '') + '>' + esc(s.name) + '</button>';
+      }).join('')
+      + '</div>'
+      + '<div class="p-hint p-note">只换视觉：结构与交互不变，选择记在本机</div>'
+      + '</div>'
+      // ④ 吉祥物
       + '<div class="p-sec"><span class="p-sec-t">吉祥物（拉绳 Buddy）</span>'
       + '<div class="p-row"><span class="p-row-l"><b>拉绳 Buddy</b><i>常驻窗口顶部，抓着绳子悬挂；按住可拖到任意位置，松开吸附顶边</i></span>'
       + '<span class="p-hint p-tag">' + (buddy && buddy.el && buddy.el.classList.contains('wdw-has-art') ? '立绘模式' : '矢量形象') + '</span></div>'
@@ -791,7 +932,7 @@ function wallpaperPanel(payload) {
   // ── 骨架 ────────────────────────────────────────────────────────────────
   // WIRE_VER：面板结构/行为变更时 +1。重注入（CDP 重连补注入）会重建元素，
   // 避免旧闭包的事件监听与新 __wdwPanel 状态 divergence（双闭包串味）。
-  var WIRE_VER = '6';   // 6：系统页新增渲染模式诊断；5：壁纸开关拆成暂停/退出（结构变更才 bump，纯样式不要）
+  var WIRE_VER = '7';   // 7：新增「界面风格」五套皮肤（系统页多一段 → 结构变更）；6：渲染模式诊断；5：暂停/退出拆分
   function build() {
     var el = document.getElementById(ID.root);
     if (el && el.getAttribute('data-wdw-ver') !== WIRE_VER) { try { el.remove(); } catch (_) {} el = null; }
@@ -799,6 +940,8 @@ function wallpaperPanel(payload) {
       el = document.createElement('aside');
       el.id = ID.root;
       el.setAttribute('data-wdw-ver', WIRE_VER);
+      // 皮肤属性挂在根上：CSS 侧的 `[data-wdw-skin="x"]` 规则据此生效（切换不重建 DOM）
+      el.setAttribute('data-wdw-skin', skinId(st.skin));
       el.innerHTML = [
         '<div class="p-head"><b class="p-title">壁纸</b><button class="p-x" type="button" data-act="close" title="关闭面板 · Esc" aria-label="关闭面板">✕</button></div>',
         '<div class="p-tabs" role="tablist"><span class="p-tabs__pill"></span>',
@@ -843,6 +986,9 @@ function wallpaperPanel(payload) {
   function paint() {
     var el = document.getElementById(ID.root);
     if (!el) return;
+    // 皮肤属性幂等补齐：重注入/宿主重载后属性可能丢，这里兜一次（不重建 DOM）
+    var sk = skinId(st.skin);
+    if (el.getAttribute('data-wdw-skin') !== sk) el.setAttribute('data-wdw-skin', sk);
     var tabs = el.querySelectorAll('.p-tab');
     for (var i = 0; i < tabs.length; i++) {
       var on = tabs[i].getAttribute('data-tab') === st.tab;
@@ -1017,7 +1163,7 @@ function wallpaperPanel(payload) {
         // 下面的 closest 全部落空 → 用户体感「点了没反应」（实测复现：target=ASIDE）。
         // 兜底：所有已知交互选择器都未命中时，用事件坐标 elementFromPoint 找回
         // 视觉目标（= 用户意图目标）。注意必须在主匹配之后判断，不干扰正常路径。
-        var KNOWN = '.p-tab,[data-src],[data-rf],[data-fav],[data-del],.p-card,[data-act],[data-fontcolor],[data-font],.p-seg button,.p-chips button,.p-btn';
+        var KNOWN = '.p-tab,[data-src],[data-rf],[data-fav],[data-del],.p-card,[data-act],[data-fontcolor],[data-font],[data-skin],.p-seg button,.p-chips button,.p-btn';
         if (typeof e.clientX === 'number' && !(t.closest && t.closest(KNOWN))) {
           var visual = document.elementFromPoint(e.clientX, e.clientY);
           if (visual && visual.closest && visual.closest(KNOWN)) t = visual;
@@ -1025,6 +1171,9 @@ function wallpaperPanel(payload) {
         // 页签
         var tabBtn = t.closest ? t.closest('.p-tab') : null;
         if (tabBtn) { setTab(tabBtn.getAttribute('data-tab')); return; }
+        // 系统页：界面风格（五套皮肤）
+        var skinBtn = t.closest ? t.closest('[data-skin]') : null;
+        if (skinBtn) { setSkin(skinBtn.getAttribute('data-skin')); return; }
         // 字体页：文字颜色（调色盘快捷预设；空串 = 恢复默认）
         var fcBtn = t.closest ? t.closest('[data-fontcolor]') : null;
         if (fcBtn) { setFont({ color: fcBtn.getAttribute('data-fontcolor') || '' }); paint(); return; }
@@ -1171,6 +1320,15 @@ function wallpaperPanel(payload) {
     window.addEventListener('resize', guard(function () { if (st.open) movePill(el); }));
   }
 
+  /** 切皮肤：只改根节点属性 + 本地偏好，不重建 DOM（结构/事件一律不动）。 */
+  function setSkin(id) {
+    st.skin = skinId(id);
+    try { localStorage.setItem(LS_SKIN, st.skin); } catch (_) {}
+    var el = document.getElementById(ID.root);
+    if (el) el.setAttribute('data-wdw-skin', st.skin);
+    paint();
+  }
+
   function setTab(id) {
     if (!TABS.some(function (t) { return t.id === id; })) return;
     st.tab = id;
@@ -1241,13 +1399,15 @@ function wallpaperPanel(payload) {
     close: api_close,
     toggle: function (v) { if (v === undefined) { st.open ? api_close() : api_open(); } else { v ? api_open() : api_close(); } },
     setTab: setTab,
+    setSkin: setSkin,
+    getSkin: function () { return skinId(st.skin); },
     refresh: function () { return Promise.all([loadWallpapers(), loadCustom(), loadHealth(), loadMask()]).then(function () { paint(); }).catch(function () {}); },
   };
   return { ok: true, id: ID.root };
 }
 
 function panelExpression(payload) {
-  var p = Object.assign({ ids: IDS, tabs: TABS, lsTab: LS_TAB, lsPrefs: LS_PREFS, lsRepo: LS_REPO, filters: REPO_FILTERS, lsFont: LS_FONT, fontColors: FONT_COLORS, fontSwatches: FONT_SWATCHES }, payload || {});
+  var p = Object.assign({ ids: IDS, tabs: TABS, lsTab: LS_TAB, lsPrefs: LS_PREFS, lsRepo: LS_REPO, filters: REPO_FILTERS, lsFont: LS_FONT, fontColors: FONT_COLORS, fontSwatches: FONT_SWATCHES, skins: SKINS, lsSkin: LS_SKIN }, payload || {});
   return '(' + wallpaperPanel.toString() + ')(' + JSON.stringify(p) + ')';
 }
 
