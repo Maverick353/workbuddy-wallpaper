@@ -35,6 +35,7 @@
     "resolve-node": "node scripts/resolve-node.js",
     "release-feed": "node scripts/release-feed.js",
     "export": "node scripts/export.js",
+    "recipe": "node scripts/recipe.js",
     "probe": "node scripts/probe-injection.js",
     "api-docs": "node scripts/gen-api-docs.js",
     "evolve": "node scripts/evolve.js",

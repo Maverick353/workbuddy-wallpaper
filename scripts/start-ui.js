@@ -118,7 +118,17 @@ function buildBackgroundExpr(theme, id, port, dir) {
   const assets = core.themeCss.resolveBackgroundAssets({
     theme: theme || { id }, id, themesDir: path.join(dir, 'themes'), port, daemonBoot: BOOT, dataDir: dir, log,
   });
-  return bg.backgroundExpression({ css: assets.bgCssStr, videoUrl: assets.bgVideoUrl, sceneUrl: assets.bgSceneUrl });
+  // 昼夜循环多帧（P0-1.2）+ 鼠标视差（P0-2.2）：从主题定义读取，透传给背景注入表达式。
+  // 无配置时返回 null/falsy，页面侧保持单图现状，不影响既有三路。
+  const frames = core.themeCss.resolveFrames({ theme: theme || { id }, id, themesDir: path.join(dir, 'themes') });
+  const parallax = (theme && theme.parallax) || null;
+  return bg.backgroundExpression({
+    css: assets.bgCssStr,
+    videoUrl: assets.bgVideoUrl,
+    sceneUrl: assets.bgSceneUrl,
+    frames: frames || null,
+    parallax: parallax,
+  });
 }
 
 /** 读 current-theme.json 里的主题 id（启动时据此恢复上次壁纸）。 */

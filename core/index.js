@@ -46,5 +46,6 @@ module.exports = {
   ensureRendererDeployed: renderer.ensureDeployed,
   rendererStatus: renderer.rendererStatus,
   resolveBackgroundAssets: themeCss.resolveBackgroundAssets,
+  resolveFrames: themeCss.resolveFrames,
   readMask: themeCss.readMask,
 };

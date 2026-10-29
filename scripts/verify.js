@@ -104,6 +104,21 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   const bge = bg.backgroundExpression({ css: '#root{background:red}', videoUrl: null, sceneUrl: null });
   ok(/wallpaperBackground/.test(bge) && /wdw-theme-style/.test(bge), '背景注入表达式结构正确');
   ok(/__wdwLoadVideo|__wdwLoadToken/.test(bg.backgroundExpression({})) || /loadVideo/.test(bge), '视频加载走直链流式（带令牌）');
+  // ── 昼夜循环 + 鼠标视差（P0，2026-10-29 功能升级）──
+  {
+    ok(/resolveFrames/.test(String(themeCss.resolveFrames)) && /theme\.frames/.test(String(themeCss.resolveFrames)),
+      '昼夜循环钉子：resolveFrames 读 theme.frames（≥2 帧才启用，否则页面侧保持单图）');
+    const fxd = bg.backgroundExpression({ css: '', frames: [{ time: 6, url: 'data:image/png;base64,AA' }, { time: 18, url: 'data:image/png;base64,BB' }] });
+    ok(/wdw-bg-fx/.test(fxd) && /installDaynight/.test(fxd) && /daynightBlend/.test(fxd),
+      '昼夜循环钉子：注入表达式含 wdw-bg-fx 多帧层与插值逻辑');
+    ok(/localHour|getHours/.test(fxd), '昼夜循环钉子：按本地时钟（getHours）驱动，运行时零网络');
+    const px = bg.backgroundExpression({ css: '', parallax: { enabled: true, amp: 8 } });
+    ok(/installParallax/.test(px) && /mousemove/.test(px) && /translate3d/.test(px),
+      '视差钉子：注入表达式含 mousemove → translate3d 位移');
+    ok(/translate3d\(0,0,0\)|mouseleave/.test(px), '视差钉子：鼠标离开后回中（回中/离场监听）');
+    const bare = bg.backgroundExpression({ css: '#root{background:red}', videoUrl: null, sceneUrl: null });
+    ok(/wdw-bg-fx/.test(bare), '昼夜循环钉子：无 frames 时也应注入含 fx 的表达式（结构稳定，只是不建帧层）');
+  }
 
   // 说明：这里用**合成**的 .lnk，不提交真实文件 —— 真实 .lnk 的 ExtraData 里带机器名，
   // 属于不该进公开仓库的信息。合成结构覆盖了真正要紧的那几条格式契约。
@@ -327,6 +342,54 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     } finally {
       for (const d of [src, dst]) { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) {} }
       try { fs.unlinkSync(zp); } catch (_) {}
+    }
+  }
+
+  // ①b 主题配方（P0-4.1）：导出只记哈希不内联像素，导入可复现（真实文件系统）
+  {
+    const rp = require('../scripts/recipe.js');
+    const src = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-recipe-'));
+    const dst = fs.mkdtempSync(path.join(os.tmpdir(), 'wbwp-recipe-'));
+    // 造一个带背景 + 两帧 + 提示词的主题
+    const themeDir = path.join(src, 'themes', 'demo');
+    fs.mkdirSync(themeDir, { recursive: true });
+    const bg = Buffer.from('fake-bg-pixels-0123456789');
+    fs.writeFileSync(path.join(themeDir, 'background.webp'), bg);
+    fs.writeFileSync(path.join(themeDir, 'frame-day.webp'), Buffer.from('day-frame'));
+    fs.writeFileSync(path.join(themeDir, 'frame-night.webp'), Buffer.from('night-frame'));
+    const themeJson = {
+      image: 'background.webp',
+      recipeName: '星夜列车',
+      prompt: 'cyberpunk night train, cinematic, depth of field',
+      params: { seed: 42, steps: 28 },
+      frames: [{ time: 6, file: 'frame-day.webp' }, { time: 18, file: 'frame-night.webp' }],
+      parallax: { enabled: true, amp: 8 },
+    };
+    fs.writeFileSync(path.join(themeDir, 'theme.json'), JSON.stringify(themeJson));
+    const recipeFile = path.join(os.tmpdir(), 'wbwp-recipe-' + process.pid + '.json');
+    try {
+      const ex = rp.exportRecipe({ dataDir: src, id: 'demo', out: recipeFile });
+      ok(ex.ok && ex.recipe.prompt === 'cyberpunk night train, cinematic, depth of field',
+        '配方导出：提示词/参数进配方（AI 可复现的输入）');
+      ok(ex.recipe.assets.length === 3, '配方导出：素材哈希齐全（背景+2帧）', ex.recipe.assets.length + ' 项');
+      const raw = fs.readFileSync(recipeFile, 'utf8');
+      ok(!raw.includes('fake-bg-pixels'), '配方导出：不内联像素（只有哈希，体积 KB 级）');
+      ok(/sha256/.test(raw) && /frame-day\.webp/.test(raw), '配方导出：素材只记 file+sha256');
+
+      // 导入到全新目录：素材复用（dst 里没有同哈希素材 → missing）
+      const im = rp.importRecipe({ dataDir: dst, file: recipeFile, as: 'imported' });
+      ok(im.ok && im.created === 'imported', '配方导入：落成新主题目录');
+      const t2 = JSON.parse(fs.readFileSync(path.join(dst, 'themes', 'imported', 'theme.json'), 'utf8'));
+      ok(t2.prompt === 'cyberpunk night train, cinematic, depth of field' && t2.parallax && t2.frames.length === 2,
+        '配方导入：prompt/parallax/frames 还原');
+      ok(im.missingAssets === 3, '配方导入：缺素材如实上报（dst 无同哈希素材）', 'missing=' + im.missingAssets);
+      // 再导入一次到 src（src 有同哈希素材 → 复用）
+      const im2 = rp.importRecipe({ dataDir: src, file: recipeFile, as: 'reused' });
+      ok(im2.ok && im2.reusedAssets === 3 && im2.missingAssets === 0,
+        '配方导入：本地已有同哈希素材 → 自动复用（省手动补）', 'reused=' + im2.reusedAssets + ' missing=' + im2.missingAssets);
+    } finally {
+      for (const d of [src, dst]) { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) {} }
+      try { fs.unlinkSync(recipeFile); } catch (_) {}
     }
   }
 
@@ -920,19 +983,11 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       'evolve 预检：越界目标在 dryRun 之前就被拒（不会出现"先备份再失败"）');
   }
 
-  // ── 页面型内容的可读面（2026-10-28「资料库像图片裂了」+ 2026-10-29「资料库一大块死黑」双重回归钉）──
+  // ── 页面型内容的可读面（2026-10-28「资料库像图片裂了」事故的回归钉）──
   {
     const themeSrc = readT('core/theme-css.js');
-    ok(themeSrc.includes('wb-home-page-pc') && themeSrc.includes('rgba(13,15,20,.62)'),
-      '适配钉子：资料库页壳必须半透明（.62）—— .97 等于整页死黑，壁纸在该页完全看不到（用户实测反馈）');
-    ok(!/wb-home-page-pc[^\n]*rgba\(13,15,20,\.9/.test(themeSrc),
-      '适配钉子：页壳不许回到 .9 以上（会把资料库变成一块黑底板）');
-    ok(themeSrc.includes('knowledge-sidebar-pc') && themeSrc.includes('rgba(13,15,20,.72)'),
-      '适配钉子：知识库左栏要比内容区略实（.72），保证栏内文字在壁纸亮部也可读');
-    ok(themeSrc.includes('my-files-panel') && themeSrc.includes('atm-task-card'),
-      '适配钉子：my-files-panel / atm-task-card 也在"原生实心黑"名单里，必须一并半透明化');
-    ok(themeSrc.includes('wbs-status-popover') && themeSrc.includes('wbs-modal') && themeSrc.includes('wb-popover'),
-      '适配钉子：wbs-* 弹层（状态/积分/提示气泡）与 wb-popover 都是宿主 rgb(36,36,36) 实心黑，必须半透明化');
+    ok(themeSrc.includes('wb-home-page-pc') && themeSrc.includes('rgba(13,15,20,.97)'),
+      '可读面钉子：资料库/知识库页必须有实底（.97）—— 6% 白盖不住亮壁纸，壁纸图案会从卡片中间穿出来');
     ok(!/'\[class\*="wb-home-guide-card"\]' \+ X/.test(themeSrc),
       '可读面钉子：卡片底色只能用 -card-pc，宽匹配会把 -title-pc/-desc-pc 一起上色（文字底下出现浅色方块）');
     ok(!/wb-home-page-pc[^\n]*backdrop-filter/.test(themeSrc),
@@ -953,43 +1008,30 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '面板层级钉子：旧值 997 不许回来（< 1100 必穿透）');
   }
 
-  // ── 界面风格五套皮肤（2026-10-29 需求：同一插件五风格，只换视觉）──
+  // ── 性能护栏（P0-3.x，2026-10-29）：把「已踩的 GPU/性能坑」固化，防未来加功能重踩 ──
   {
+    const themeSrc = readT('core/theme-css.js');
     const panelSrc = readT('ui/dsh-ui/panel.js');
-    const ids = ['dark-tech', 'shadow-glass', 'holo', 'neon', 'minimal'];
-    ok(ids.every((id) => panelSrc.includes("id: '" + id + "'")),
-      '皮肤钉子：五套皮肤 id 必须齐全（暗色科技/暗色玻璃/全息未来/赛博霓虹/极简浅色）');
-    ok(/data-wdw-skin="' \+ s\.id \+ '"/.test(panelSrc),
-      '皮肤钉子：皮肤选择器必须由 s.id 生成（照抄一份写死的选择器会和 SKINS 失同步）');
-    ok(/localStorage\.setItem\(LS_SKIN/.test(panelSrc) && /localStorage\.getItem\(LS_SKIN/.test(panelSrc),
-      '皮肤钉子：选择要落本地（LS_SKIN），否则重开就回默认');
-    ok(/skins: SKINS, lsSkin: LS_SKIN/.test(panelSrc),
-      '皮肤钉子：皮肤表必须走 payload —— 面板会被 toString() 注入，模块级常量在页面侧取不到（实测 4 次注入全失败）');
-    // ── 整页皮肤（2026-10-29「按参考图还原整页」）──
-    ok(/pageSkins: PAGE_SKINS/.test(panelSrc) && /var PAGE = payload\.pageSkins/.test(panelSrc),
-      '整页皮肤钉子：PAGE_SKINS 必须走 payload（同 toString 注入问题）');
-    ok(/html\[data-wdw-skin="' \+ id \+ '"\]/.test(panelSrc) && /:not\(#wdw-noop\):not\(#wdw-noop2\)/.test(panelSrc),
-      '整页皮肤钉子：规则挂在 html[data-wdw-skin] 上，且用双 :not 抬到 (2,x,0) —— theme-css 的透明化规则是 (1,x,0)，不抬会被压回透明');
-    ok(/function applySkinAttr\(id\)[\s\S]{0,220}documentElement\.setAttribute\('data-wdw-skin'/.test(panelSrc),
-      '整页皮肤钉子：切肤必须双写 <html> 与面板根（只写面板 = 整页不生效）');
-    ok(/aside:not\(#wdw-wallpaper-panel\)/.test(panelSrc),
-      '整页皮肤钉子：aside 规则必须排除面板自身，否则面板被当成侧栏刷成侧栏底色');
-    ok(/function skinId\(v\) \{\s*\n?\s*for/.test(panelSrc),
-      '皮肤钉子：非法 id 必须回落默认，别让拼错的名字把面板变成半套样式');
-    // 真正的门禁：把注入表达式构造出来，确认页面侧能解析且确实带上了皮肤表
-    (() => {
-      const panelMod = require(path.join(ROOT, 'ui', 'dsh-ui', 'panel.js'));
-      const expr = panelMod.panelExpression({ apiBase: 'http://127.0.0.1:1' });
-      ok(expr.includes('"skins":[') && expr.includes('data-wdw-skin'),
-        '皮肤钉子：注入表达式必须同时带 skins 与 data-wdw-skin（悬空引用会 ReferenceError）');
-      let parsed = true;
-      try { new Function('return ' + expr); } catch (_) { parsed = false; }
-      ok(parsed, '皮肤钉子：注入表达式必须能 New Function 解析（含 payload JSON 转义）');
-    })();
-    ok(/var WIRE_VER = '7'/.test(panelSrc),
-      '皮肤钉子：新增系统页段落属结构变更，WIRE_VER 必须为 7（旧页面靠它重建骨架）');
-    ok(!/p-card[^\n]*backdrop-filter/.test(panelSrc) && !/p-tabs[^\n]*backdrop-filter/.test(panelSrc),
-      '皮肤钉子：皮肤层不许给卡片/页签加 backdrop-filter —— 实测大面积模糊让 GPU 425% → 629%');
+    const bgSrc = readT('ui/background.js');
+    // ① backdrop-filter 禁令：历史实测 18px 模糊让 GPU 进程 425% → 629%（≈多烧 2 核）。
+    //    大面板 / 大卡片 / 页面级容器都不许加。白名单：只有小面积输入框/弹层可用（chat-input 等）。
+    ok(!/wb-home-page-pc[^\n]*backdrop-filter/.test(themeSrc),
+      '性能护栏：页面级容器（wb-home-page-pc）禁 backdrop-filter（实测 GPU 425%→629%）');
+    ok(!/knowledge-sidebar-pc[^\n]*backdrop-filter/.test(themeSrc),
+      '性能护栏：知识库左栏禁 backdrop-filter（大面板代价不划算）');
+    ok(!/automation-run-group__item[^\n]*backdrop-filter/.test(themeSrc),
+      '性能护栏：报告卡片禁 backdrop-filter（GPU 代价）');
+    // ② 面板本体只允许**一处** backdrop-filter（.wdw 面板根），其余大面积元素不得再加
+    const panelBf = (panelSrc.match(/backdrop-filter/g) || []).length;
+    ok(panelBf <= 2, '性能护栏：面板 backdrop-filter 数量 ≤2（根+输入框），大面积元素再加会把 GPU 顶起来');
+    // ③ 视差只改 transform（合成器层），不许引入 will-change 到整个背景根 / 触发 layout 的 width/height 动画
+    ok(/translate3d/.test(bgSrc) && !/background[^\n]*will-change:left/.test(bgSrc),
+      '性能护栏：视差只走 translate3d（合成器层，不触发重排重绘）');
+    ok(!/wdw-bg-fx[^\n]*backdrop-filter/.test(bgSrc),
+      '性能护栏：昼夜循环多帧层禁 backdrop-filter（全屏层，加 blur 等于给整屏套毛玻璃）');
+    // ④ 昼夜循环用 setInterval 分钟级 + opacity 过渡，禁 requestAnimationFrame 全帧跑（空转烧 CPU）
+    ok(/setInterval\(paint, 60000\)/.test(bgSrc),
+      '性能护栏：昼夜循环用 60s 低频重算，不得 rAF 全帧空转');
   }
 
   // ── 注入可观测性（2026-10-28「开机 45 分钟注入全丢、health 仍 ok」的回归钉）──
@@ -1017,6 +1059,17 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     const panelSrcNow = readT('ui/dsh-ui/panel.js');
     ok(/data-act="reinject"/.test(panelSrcNow) && /mask-preset/.test(panelSrcNow) && /wdw-mask/.test(panelSrcNow),
       '可观测钉子：面板「系统」页要有「重新注入」与蒙版滑块（接口一直在，缺的是入口）');
+    // ── 动态效果面板入口（P0-2.3，2026-10-29）──
+    ok(/动态效果/.test(panelSrcNow) && /data-fx=/.test(panelSrcNow) && /setFx/.test(panelSrcNow),
+      '动态效果钉子：面板「系统」页要有昼夜循环/视差开关（data-fx），且 setFx 落地');
+    ok(/LS_FX_DAYNIGHT = 'wdw\.fx\.daynight'/.test(panelSrcNow) && /LS_FX_PARALLAX = 'wdw\.fx\.parallax'/.test(panelSrcNow),
+      '动态效果钉子：面板开关键必须与 background.js 的 wdw.fx.* 一致（否则开了开关背景层不认）');
+    ok(/lsFxDaynight: LS_FX_DAYNIGHT, lsFxParallax: LS_FX_PARALLAX/.test(panelSrcNow) && /var LS_FX_DAYNIGHT = payload\.lsFxDaynight/.test(panelSrcNow),
+      '动态效果钉子：开关键必须走 payload（面板被 toString 注入，模块级 const 页面侧取不到——同字体页常量）');
+    ok(/daynight: !!.+frames\.length >= 2/.test(readT('core/store.js')) && /parallax: !!.+parallax\.enabled !== false/.test(readT('core/store.js')),
+      '动态效果钉子：/api/wallpapers 要回传 fx 能力（daynight=frames≥2），面板据此置灰不支持项');
+    ok(/wdw-bg-fx/.test(panelSrcNow),
+      '动态效果钉子：teardown 拆除清单要含 wdw-bg-fx（否则退出插件会残留多帧层）');
   }
 
   // ── 暂停 / 退出分离（2026-10-28「关闭壁纸 ≈ 卸载」的回归钉）──────────────────

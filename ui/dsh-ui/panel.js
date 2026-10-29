@@ -33,6 +33,9 @@ const IDS = { root: 'wdw-wallpaper-panel', style: 'wdw-panel-style' };
 const LS_TAB = 'wdw.panel.tab';
 const LS_PREFS = 'wdw.panel.prefs';
 const LS_REPO = 'wdw.repo';
+// 动态效果开关键（与 ui/background.js 的 LS_FX_DAYNIGHT / LS_FX_PARALLAX 保持一致）
+const LS_FX_DAYNIGHT = 'wdw.fx.daynight';
+const LS_FX_PARALLAX = 'wdw.fx.parallax';
 /** 仓库过滤 chips（id → 标签）。fav 与其余并存：fav 只看收藏，其余按类型筛。 */
 const REPO_FILTERS = [
   { id: 'all', label: '全部' },
@@ -48,157 +51,6 @@ const TABS = [
   { id: 'extensions', label: '扩展' },
   { id: 'about', label: '关于' },
 ];
-
-// ── 界面风格（五套独立皮肤，只换视觉层：DOM 结构/交互/尺寸一律不动）──────────
-// 选择逻辑：面板根挂 data-wdw-skin，CSS 用 `#id[data-wdw-skin="x"]` 覆盖；
-// 该选择器特异性 (1,1,0) 高于基线 `#id .p-xxx` 的同名规则里需要覆盖的部分。
-// 落地约束（改这里前必读）：
-//   · 每套必须自带 --wdw-* 变量覆盖，不能依赖宿主亮/暗主题；
-//   · 浅色两套要显式改 .p-card .cap / .badge / .p-tag 的文字色，否则白底白字；
-//   · 一律不加 backdrop-filter 到 .p-card 之类大面积元素（实测 GPU 425%→629%）。
-const LS_SKIN = 'wdw.skin';
-const SKINS = [
-  {
-    id: 'dark-tech', name: '暗色科技',
-    vars: '--wdw-ink:#EDF2F7;--wdw-ink-2:rgba(214,225,235,.72);--wdw-ink-3:rgba(168,182,196,.52);'
-      + '--wdw-accent:#77B6C5;--wdw-glass-line:rgba(119,182,197,.18);--wdw-glass-fill:rgba(255,255,255,.06);'
-      + '--wdw-glass-fill-hi:rgba(255,255,255,.12);--wdw-ui-h:32px;--wdw-ui-radius:10px;',
-    css: '@S@{background:linear-gradient(180deg,rgba(34,61,78,.92),rgba(22,33,41,.94)) !important;'
-      + 'border-color:rgba(255,255,255,.09) !important;border-radius:20px !important;'
-      + 'box-shadow:0 18px 46px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.04) !important}'
-      + '@S@ .p-tabs{background:rgba(255,255,255,.04) !important;border-color:rgba(255,255,255,.07) !important}'
-      + '@S@ .p-tabs__pill{background:linear-gradient(180deg,#9FDCE6,#4E93A6) !important;box-shadow:0 0 16px rgba(119,182,197,.45) !important}'
-      + '@S@ .p-tab.wdw-on{color:#0B2027 !important;font-weight:700 !important}'
-      + '@S@ .p-card{background:#1E2B34 !important;border-color:rgba(255,255,255,.08) !important}'
-      + '@S@ .p-card.wdw-cur{box-shadow:inset 0 0 0 2px #77B6C5,0 0 16px rgba(119,182,197,.30) !important}'
-      + '@S@ .p-btn.wdw-primary{background:linear-gradient(180deg,#A8DEE8,#4E93A6) !important;border-color:transparent !important;color:#0B2027 !important;font-weight:700 !important}'
-      + '@S@ .p-btn.wdw-danger{background:rgba(239,108,108,.12) !important;border-color:rgba(239,108,108,.45) !important;color:#FFA9A9 !important}'
-      + '@S@ .p-chips button.wdw-on{background:rgba(119,182,197,.20) !important;border-color:rgba(119,182,197,.50) !important;color:#E4EEF2 !important}'
-      + '@S@ .p-font--cur{box-shadow:inset 0 0 0 1px #77B6C5 !important}'
-      + '@S@ .p-foot{background:rgba(255,255,255,.03) !important}',
-  },
-  {
-    id: 'shadow-glass', name: '暗色玻璃',
-    vars: '--wdw-ink:#E8ECF4;--wdw-ink-2:rgba(232,236,244,.72);--wdw-ink-3:rgba(232,236,244,.50);'
-      + '--wdw-accent:#5FA0D8;--wdw-glass-line:rgba(255,255,255,.16);--wdw-glass-fill:rgba(255,255,255,.07);'
-      + '--wdw-glass-fill-hi:rgba(255,255,255,.13);--wdw-ui-h:30px;--wdw-ui-radius:10px;',
-    css: '@S@{background:color-mix(in srgb,var(--wb-bg-popover,#151a22) 62%,transparent) !important;'
-      + 'border-color:rgba(255,255,255,.12) !important;border-radius:22px !important}'
-      + '@S@ .p-tabs__pill{background:color-mix(in srgb,var(--wb-bg-popover,#2a3040) 65%,transparent) !important}'
-      + '@S@ .p-btn.wdw-primary{background:color-mix(in srgb,#4F8CFF 34%,transparent) !important;border-color:color-mix(in srgb,#4F8CFF 60%,transparent) !important}',
-  },
-  {
-    id: 'holo', name: '全息未来',
-    vars: '--wdw-ink:#E8F7FF;--wdw-ink-2:rgba(196,229,255,.74);--wdw-ink-3:rgba(150,196,228,.52);'
-      + '--wdw-accent:#5B9BE0;--wdw-glass-line:rgba(122,192,235,.28);--wdw-glass-fill:rgba(88,180,255,.10);'
-      + '--wdw-glass-fill-hi:rgba(120,214,255,.20);--wdw-ui-h:32px;--wdw-ui-radius:10px;',
-    css: '@S@{background:linear-gradient(180deg,rgba(7,30,88,.88),rgba(1,10,30,.92)) !important;'
-      + 'border-color:rgba(122,192,235,.34) !important;border-radius:18px !important;'
-      + 'box-shadow:0 0 0 1px rgba(96,206,255,.10),0 18px 48px rgba(0,10,30,.62),0 0 42px rgba(59,168,255,.22) !important}'
-      + '@S@ .p-tabs{background:rgba(88,180,255,.10) !important;border-color:rgba(96,206,255,.22) !important}'
-      + '@S@ .p-tabs__pill{background:linear-gradient(135deg,#5B9BE0,#7AC0EB) !important;box-shadow:0 0 18px rgba(80,170,255,.55) !important}'
-      + '@S@ .p-tab.wdw-on{color:#04121F !important;font-weight:700 !important}'
-      + '@S@ .p-card{border-color:rgba(96,206,255,.28) !important;box-shadow:inset 0 0 0 1px rgba(96,206,255,.06) !important}'
-      + '@S@ .p-card.wdw-cur{box-shadow:inset 0 0 0 2px #37C6FF,0 0 22px rgba(55,198,255,.35) !important}'
-      + '@S@ .p-btn{border-color:rgba(96,206,255,.22) !important}'
-      + '@S@ .p-btn.wdw-primary{background:linear-gradient(135deg,rgba(91,155,224,.92),rgba(122,192,235,.92)) !important;border-color:transparent !important;color:#04121F !important;font-weight:700 !important;box-shadow:0 0 14px rgba(55,198,255,.28) !important}'
-      + '@S@ .p-btn.wdw-danger{background:rgba(255,107,138,.14) !important;border-color:rgba(255,107,138,.55) !important;color:#FFC2CE !important}'
-      + '@S@ .p-chips button.wdw-on{background:linear-gradient(135deg,rgba(55,198,255,.32),rgba(122,92,255,.32)) !important;border-color:rgba(96,206,255,.55) !important;color:#E8F7FF !important}'
-      + '@S@ .p-title{letter-spacing:.6px}'
-      + '@S@ .p-foot{background:rgba(88,180,255,.06) !important}',
-  },
-  {
-    id: 'neon', name: '赛博霓虹',
-    vars: '--wdw-ink:#F6EBFF;--wdw-ink-2:rgba(220,190,255,.76);--wdw-ink-3:rgba(170,140,210,.55);'
-      + '--wdw-accent:#59A4B9;--wdw-glass-line:rgba(155,62,219,.32);--wdw-glass-fill:rgba(150,80,255,.12);'
-      + '--wdw-glass-fill-hi:rgba(190,110,255,.22);--wdw-ui-h:32px;--wdw-ui-radius:10px;',
-    css: '@S@{background:linear-gradient(180deg,rgba(43,14,76,.88),rgba(12,14,33,.92)) !important;'
-      + 'border-color:rgba(155,62,219,.50) !important;border-radius:20px !important;'
-      + 'box-shadow:0 0 0 1px rgba(89,164,185,.24),0 0 36px rgba(155,62,219,.30),0 0 64px rgba(94,37,141,.24),0 20px 50px rgba(0,0,0,.6) !important}'
-      + '@S@ .p-tabs{background:rgba(60,20,90,.45) !important;border-color:rgba(180,110,255,.35) !important}'
-      + '@S@ .p-tabs__pill{background:linear-gradient(135deg,#59A4B9,#9B3EDB) !important;box-shadow:0 0 20px rgba(89,164,185,.55) !important}'
-      + '@S@ .p-tab.wdw-on{color:#12031C !important;font-weight:800 !important}'
-      + '@S@ .p-title{letter-spacing:1.4px;text-shadow:0 0 12px rgba(89,164,185,.55)}'
-      + '@S@ .p-card{border-color:rgba(89,164,185,.45) !important;box-shadow:0 0 12px rgba(89,164,185,.22) !important}'
-      + '@S@ .p-card.wdw-cur{box-shadow:0 0 0 1px #9B3EDB,0 0 20px rgba(155,62,219,.45) !important}'
-      + '@S@ .p-card .badge{background:rgba(155,62,219,.30) !important;border-color:rgba(155,62,219,.62) !important}'
-      + '@S@ .p-btn{border-color:rgba(180,110,255,.35) !important}'
-      + '@S@ .p-btn.wdw-primary{background:linear-gradient(135deg,rgba(89,164,185,.95),rgba(155,62,219,.95)) !important;border-color:transparent !important;color:#12031C !important;font-weight:800 !important}'
-      + '@S@ .p-btn.wdw-danger{background:rgba(155,62,219,.18) !important;border-color:rgba(155,62,219,.62) !important;color:#E7C8FF !important}'
-      + '@S@ .p-chips button.wdw-on{background:rgba(89,164,185,.20) !important;border-color:rgba(89,164,185,.55) !important;color:#EDE3FA !important}'
-      + '@S@ .p-foot{background:rgba(60,20,90,.35) !important}',
-  },
-  {
-    id: 'minimal', name: '极简浅色',
-    vars: '--wdw-ink:#1E1F22;--wdw-ink-2:#6B7280;--wdw-ink-3:#9AA1AC;'
-      + '--wdw-accent:#5B8FD6;--wdw-glass-line:#E8EDF2;--wdw-glass-fill:#F5F6F8;'
-      + '--wdw-glass-fill-hi:#EDEFF3;--wdw-ui-h:30px;--wdw-ui-radius:8px;',
-    css: '@S@{background:#FFFFFF !important;border-color:#ECEDEF !important;border-radius:16px !important;'
-      + 'box-shadow:0 10px 30px rgba(20,30,50,.08),0 2px 6px rgba(20,30,50,.05) !important}'
-      + '@S@ .p-head{border-bottom-color:#ECEDEF !important}'
-      + '@S@ .p-tabs{background:transparent !important;border-color:#ECEDEF !important;border-radius:0 !important}'
-      + '@S@ .p-tabs__pill{display:none !important}'
-      + '@S@ .p-tab.wdw-on{color:#1E1F22 !important;font-weight:600 !important;box-shadow:inset 0 -2px 0 0 #2B6BFF !important}'
-      + '@S@ .p-card{background:#F1F4F6 !important;border-color:#E7E9EE !important;box-shadow:none !important}'
-      + '@S@ .p-card.wdw-cur{box-shadow:inset 0 0 0 2px #2B6BFF !important}'
-      + '@S@ .p-card .cap{background:rgba(255,255,255,.94) !important;color:#1E1F22 !important;font-weight:500 !important}'
-      + '@S@ .p-card .badge{background:#FFFFFF !important;border-color:#E3E6EB !important;color:#374151 !important}'
-      + '@S@ .p-card .del{background:#FFFFFF !important;color:#6B7280 !important;border:1px solid #E3E6EB !important}'
-      + '@S@ .p-btn{background:#FFFFFF !important;border-color:#E3E6EB !important;color:#374151 !important}'
-      + '@S@ .p-btn.wdw-primary{background:#5B8FD6 !important;border-color:#5B8FD6 !important;color:#FFFFFF !important;font-weight:600 !important}'
-      + '@S@ .p-btn.wdw-danger{background:#FFF5F5 !important;border-color:#F3C9C9 !important;color:#D9534F !important}'
-      + '@S@ .p-x{color:#9AA1AC !important}'
-      + '@S@ .p-chips button.wdw-on{background:#5B8FD6 !important;border-color:#5B8FD6 !important;color:#FFFFFF !important}'
-      + '@S@ .p-font--cur{box-shadow:inset 0 0 0 1px #2B6BFF !important;color:#1E1F22 !important}'
-      + '@S@ .p-hint.p-tag{background:#F2F3F5 !important;border-color:#E7E9EE !important;color:#6B7280 !important}'
-      + '@S@ .p-foot{background:#FCFCFD !important;border-top-color:#ECEDEF !important}',
-  },
-];
-/** 皮肤 id 合法性（页面侧同名函数见 wallpaperPanel 内；这里供 Node 侧/测试用）。 */
-function skinId(v) {
-  for (var i = 0; i < SKINS.length; i++) if (SKINS[i].id === v) return v;
-  return 'dark-tech';
-}
-
-// ── 整页皮肤（2026-10-29：「严格按参考图还原整页」）────────────────────────────
-// 与面板皮肤同 id、同一次切换：面板换肤的同时把宿主页面（侧栏/主区/卡片壳/输入/弹层）也按该风格重绘。
-// 设计取舍：
-//   · 参考图本身就是"实底界面"，所以整页皮肤会让壁纸退化为边缘点缀（dark/glass 半透明可透出，
-//     minimal 近实底）——这是"还原参考图"与"壁纸可见"的直接冲突，按用户选择以参考图为准。
-//   · 规则用模板 + 变量（--wpg-*），5 套只换变量，避免 5×N 条硬编码互相打架。
-//   · 选择器带两个 `:not(#…)` 把特异性抬到 (2,x,0)，稳压 theme-css 的 (1,x,0) 透明化规则。
-const PAGE_SKINS = {
-  'dark-tech': {
-    font: '"SF Pro Text","Source Han Sans SC","Microsoft YaHei UI",sans-serif',
-    ink: '#E4EEF2', ink2: 'rgba(203,224,232,.72)', accent: '#77B6C5', accent2: '#295D72',
-    sidebar: 'rgba(22,33,41,.82)', main: 'rgba(13,27,32,.62)', card: 'rgba(34,61,78,.90)',
-    line: 'rgba(119,182,197,.22)', input: 'rgba(119,182,197,.10)', pop: 'rgba(23,38,48,.94)', r: '14px',
-  },
-  'shadow-glass': {
-    font: '"PingFang SC","Microsoft YaHei UI",sans-serif',
-    ink: '#12365C', ink2: 'rgba(18,54,92,.72)', accent: '#3C7FC2', accent2: '#6AB2E0',
-    sidebar: 'rgba(203,231,246,.62)', main: 'rgba(233,245,252,.55)', card: 'rgba(169,221,246,.58)',
-    line: 'rgba(255,255,255,.85)', input: 'rgba(255,255,255,.60)', pop: 'rgba(238,248,255,.94)', r: '18px',
-  },
-  holo: {
-    font: '"HarmonyOS Sans SC","Source Han Sans SC","Microsoft YaHei UI",sans-serif',
-    ink: '#DCEBFB', ink2: 'rgba(180,208,240,.76)', accent: '#498AD5', accent2: '#7AC0EB',
-    sidebar: 'rgba(7,30,88,.84)', main: 'rgba(2,15,42,.64)', card: 'rgba(13,48,121,.74)',
-    line: 'rgba(122,192,235,.30)', input: 'rgba(73,138,213,.16)', pop: 'rgba(6,26,72,.94)', r: '14px',
-  },
-  neon: {
-    font: '"Rajdhani","Source Han Sans SC","Microsoft YaHei UI",sans-serif',
-    ink: '#EDE3FA', ink2: 'rgba(206,186,230,.78)', accent: '#59A4B9', accent2: '#9B3EDB',
-    sidebar: 'rgba(22,16,51,.86)', main: 'rgba(12,14,33,.66)', card: 'rgba(63,34,118,.72)',
-    line: 'rgba(155,62,219,.34)', input: 'rgba(94,37,141,.24)', pop: 'rgba(25,16,72,.94)', r: '16px',
-  },
-  minimal: {
-    font: '"Inter","Source Han Sans SC","Microsoft YaHei UI",sans-serif',
-    ink: '#22262B', ink2: '#6D7480', accent: '#5B8FD6', accent2: '#3C6FB0',
-    sidebar: '#F3F6F8', main: '#FFFFFF', card: '#F1F4F6',
-    line: '#E8EDF2', input: '#F4F8FA', pop: '#FFFFFF', r: '14px',
-  },
-};
 
 /** 字体页常量。颜色 '' = 不覆盖（跟随主题）；其余是 #rrggbb。字体列表由服务端 /api/fonts 提供。 */
 const LS_FONT = 'wdw.font';
@@ -219,76 +71,8 @@ function wallpaperPanel(payload) {
   var FILTERS = payload.filters;
   // 字体页常量（必须走 payload —— 本函数会被 toString() 注入，模块级常量取不到）
   var LS_FONT = payload.lsFont, FONT_COLORS = payload.fontColors, FONT_SWATCHES = payload.fontSwatches || [];
-  // 皮肤表同理必须走 payload：2026-10-29 首版把 SKINS/skinCss 留在模块级，
-  // 注入后 page 侧直接 ReferenceError: skinCss is not defined（注入 4 次全失败，health.injection 抓到）。
-  var SKINS = payload.skins || [];
-  var LS_SKIN = payload.lsSkin || 'wdw.skin';
-  function skinId(v) {
-    for (var i = 0; i < SKINS.length; i++) if (SKINS[i].id === v) return v;
-    return (SKINS[0] && SKINS[0].id) || 'dark-tech';
-  }
-  function skinCss() {
-    var out = [];
-    for (var i = 0; i < SKINS.length; i++) {
-      var s = SKINS[i];
-      var sel = '#' + ID.root + '[data-wdw-skin="' + s.id + '"]';
-      out.push(sel + '{' + s.vars + '}' + s.css.split('@S@').join(sel));
-    }
-    return out.join('\n');
-  }
-  // 整页皮肤：模板 + 每套变量。属性挂在 <html> 上，切肤即整页重绘（面板/宿主同步）。
-  var PAGE = payload.pageSkins || {};
-  function pageSkinCss() {
-    var out = [];
-    for (var i = 0; i < SKINS.length; i++) {
-      var id = SKINS[i].id;
-      var v = PAGE[id] || PAGE['dark-tech'] || {};
-      var H = 'html[data-wdw-skin="' + id + '"]';
-      // 两个 :not(#…) 把特异性抬到 (2,x,0)：theme-css 的透明化/可读面规则是 (1,x,0)，必须稳压
-      var N = ':not(#wdw-noop):not(#wdw-noop2)';
-      out.push(
-        H + '{--wpg-ink:' + v.ink + ';--wpg-ink-2:' + v.ink2 + ';--wpg-accent:' + v.accent
-        + ';--wpg-line:' + v.line + ';--wpg-card:' + v.card + ';--wpg-input:' + v.input
-        + ';--wpg-pop:' + v.pop + ';--wpg-sidebar:' + v.sidebar + ';--wpg-main:' + v.main
-        + ';--wpg-r:' + v.r + ';--wpg-font:' + v.font + ';--wb-accent:' + v.accent + '}',
-        H + ' body' + N + '{font-family:var(--wpg-font) !important;color:var(--wpg-ink) !important}',
-        H + ' .conversation-list' + N + ',' + H + ' [data-view-id=sidebar]' + N + ','
-          + H + ' aside:not(#wdw-wallpaper-panel)' + N
-          + '{background:var(--wpg-sidebar) !important;border-right:1px solid var(--wpg-line) !important}',
-        H + ' .teams-container' + N + ',' + H + ' .main-content' + N + ',' + H + ' [data-view-id]' + N
-          + ',' + H + ' .conversation-shell' + N + '{background:var(--wpg-main) !important}',
-        H + ' [class*="wb-home-page-pc"]' + N + ',' + H + ' [class*="knowledge-sidebar-pc"]' + N + ','
-          + H + ' [class*="wb-feed-content-shell"]' + N + ',' + H + ' .automation-run-group__item' + N + ','
-          + H + ' [class*="atm-task-card"]' + N + ',' + H + ' [class*="my-files-panel"]' + N
-          + '{background:var(--wpg-card) !important;border:1px solid var(--wpg-line) !important;border-radius:var(--wpg-r) !important}',
-        H + ' .cr-input-container' + N + ',' + H + ' [class*="chat-input"]' + N
-          + '{background:var(--wpg-input) !important;border-color:var(--wpg-line) !important}',
-        H + ' .wb-popover' + N + ',' + H + ' [class*="wbs-modal"]' + N + ','
-          + H + ' [class*="wbs-status-popover"]' + N + ',' + H + ' [class*="wbs-credit-summary-popover"]' + N + ','
-          + H + ' [class*="workspace-tree-create-space-dialog-pc"]' + N
-          + '{background:var(--wpg-pop) !important;border-color:var(--wpg-line) !important}',
-        // 组件级：宿主按钮 / 开关 / 焦点环 / 滚动条 —— 只换皮，不改尺寸与行为
-        H + ' .wb-button' + N + '{background:color-mix(in srgb,var(--wpg-accent) 16%,transparent) !important;'
-          + 'border-color:color-mix(in srgb,var(--wpg-accent) 45%,transparent) !important;color:var(--wpg-ink) !important}',
-        H + ' .wb-button--primary' + N + ',' + H + ' .wb-switch.wb-switch--checked' + N
-          + '{background:var(--wpg-accent) !important;border-color:var(--wpg-accent) !important;color:#04121f !important}',
-        H + ' :focus-visible{outline-color:var(--wpg-accent) !important}',
-        H + ' ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--wpg-accent) 34%,transparent) !important}',
-        // 文本容器兜底：宿主若把字设成白色，在浅色皮肤下会看不见 → 用更高特异性压回皮肤文字色
-        H + ' .cr-message-list' + N + ',' + H + ' [class*="wb-home-page-pc"]' + N + ','
-          + H + ' .main-content' + N + ',' + H + ' .conversation-list' + N
-          + '{color:var(--wpg-ink) !important;-webkit-text-fill-color:var(--wpg-ink) !important}',
-        H + ' ::selection{background:var(--wpg-accent) !important;color:#04121f !important}'
-      );
-    }
-    return out.join('\n');
-  }
-  /** 皮肤属性双写：<html> 管整页，面板根管面板自身（两份规则各自独立生效）。 */
-  function applySkinAttr(id) {
-    document.documentElement.setAttribute('data-wdw-skin', id);
-    var el = document.getElementById(ID.root);
-    if (el) el.setAttribute('data-wdw-skin', id);
-  }
+  // 动态效果开关键（必须走 payload —— 同字体页常量，模块级 const 会被 toString() 注入时丢掉）
+  var LS_FX_DAYNIGHT = payload.lsFxDaynight, LS_FX_PARALLAX = payload.lsFxParallax;
   // 宿主环境：闭包里存在 api(path, opts)（自带 X-WorkDaddy-Token）。独立环境取不到 → 走 fetch。
   // typeof 对未声明变量安全；payload.hostApi 为假时短路，连 typeof 都不求值。
   var HOST_API = payload.hostApi && typeof api === 'function' ? api : null;
@@ -304,8 +88,6 @@ function wallpaperPanel(payload) {
   var st = {
     open: false,
     tab: (function () { try { var v = localStorage.getItem(LS_TAB); return TABS.some(function (t) { return t.id === v; }) ? v : 'library'; } catch (_) { return 'library'; } })(),
-    // 皮肤：本机偏好（localStorage），非法值回落 dark-tech；切换只改属性，不重建 DOM
-    skin: (function () { try { return skinId(localStorage.getItem(LS_SKIN) || ''); } catch (_) { return 'dark-tech'; } })(),
     source: 'custom',            // library 页的来源分段（自定义 / WE 库）
     official: [], custom: [], we: null, weBusy: false,
     cur: '', interactive: true, videoMode: 'stream', sceneFps: 30, paused: false,
@@ -319,6 +101,8 @@ function wallpaperPanel(payload) {
     // 注入状态（health.injection）+ 蒙版浓度 + 应用中的壁纸 key（「应用中…」反馈）
     inj: undefined, mask: null, maskBusy: false, reinjectBusy: false, applying: '', pauseBusy: false,
     render: null,                 // WebGL 后端探测结果（软件渲染会让场景壁纸发糊，见 renderInfo）
+    fx: null,                     // 当前主题动态效果能力 { daynight, parallax }（来自 /api/wallpapers）
+    fxDaynight: null, fxParallax: null, fxBusy: false,  // 昼夜循环/视差开关（null=读取中）
   };
 
   function prefs(patch) {
@@ -521,7 +305,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-foot{flex:0 0 auto;padding:9px 14px;border-top:1px solid rgba(255,255,255,.10);font-size:11px;color:var(--wdw-ink-3);display:flex;gap:8px;align-items:center}',
       // 键盘可达：注入层默认没有焦点环（宿主 CSS 会吃掉），键盘用户看不到当前焦点
       '#' + ID.root + ' button:focus-visible,#' + ID.root + ' input:focus-visible,#' + ID.root + ' [tabindex]:focus-visible{outline:2px solid color-mix(in srgb,var(--wdw-accent) 80%,transparent);outline-offset:2px}',
-    ].join('\n') + '\n' + skinCss() + '\n' + pageSkinCss();
+    ].join('\n');
     if (s.textContent !== css) s.textContent = css;
   }
 
@@ -760,18 +544,23 @@ function wallpaperPanel(payload) {
         return '<button type="button" data-act="mask-preset" data-v="' + (p[1] / 100) + '"' + (on ? ' class="wdw-on"' : '') + '>' + p[0] + '</button>';
       }).join('') + '</div>'
       + '</div>'
-      // ③ 界面风格：五套独立皮肤，只换视觉层（结构/交互/尺寸不动），选择落本机
-      + '<div class="p-sec"><span class="p-sec-t">界面风格</span>'
-      + '<div class="p-chips" role="radiogroup" aria-label="界面风格">'
-      + SKINS.map(function (s) {
-        var on = s.id === skinId(st.skin);
-        return '<button type="button" role="radio" aria-checked="' + on + '" data-skin="' + s.id + '"'
-          + (on ? ' class="wdw-on"' : '') + '>' + esc(s.name) + '</button>';
-      }).join('')
-      + '</div>'
-      + '<div class="p-hint p-note">只换视觉：结构与交互不变，选择记在本机</div>'
-      + '</div>'
-      // ④ 吉祥物
+      // ②b 动态效果（P0-2.3）：昼夜循环 + 鼠标视差。开关写 localStorage，重注入即时生效。
+      + (function () {
+        var cap = st.fx || { daynight: false, parallax: false };
+        var pre = fxPrefs();
+        function sw(key, id, label, tip, supported, on) {
+          return '<div class="p-row"><span class="p-row-l"><b>' + label + '</b><i>' + tip + '</i></span>'
+            + '<button type="button" class="p-sw' + (on ? ' wdw-on' : '') + '" data-fx="' + key + '"' + (supported ? '' : ' disabled title="当前壁纸不支持"') + ' role="switch" aria-checked="' + (on ? 'true' : 'false') + '"></button></div>';
+        }
+        var dnOn = cap.daynight && pre.daynight;
+        var pxOn = cap.parallax && pre.parallax;
+        return '<div class="p-sec"><span class="p-sec-t">动态效果</span>'
+          + sw(LS_FX_DAYNIGHT, 'fx-daynight', '昼夜循环', cap.daynight ? '按本地时间在日/夜帧间平滑过渡（需壁纸自带多帧）' : '当前壁纸无多帧素材，暂不支持', cap.daynight, dnOn)
+          + sw(LS_FX_PARALLAX, 'fx-parallax', '鼠标视差', cap.parallax ? '背景随鼠标轻微位移，鼠标离开后自动回中' : '当前壁纸未开启视差', cap.parallax, pxOn)
+          + (st.fxBusy ? '<div class="p-hint">正在应用动态效果…</div>' : '')
+          + '</div>';
+      })()
+      // ③ 吉祥物
       + '<div class="p-sec"><span class="p-sec-t">吉祥物（拉绳 Buddy）</span>'
       + '<div class="p-row"><span class="p-row-l"><b>拉绳 Buddy</b><i>常驻窗口顶部，抓着绳子悬挂；按住可拖到任意位置，松开吸附顶边</i></span>'
       + '<span class="p-hint p-tag">' + (buddy && buddy.el && buddy.el.classList.contains('wdw-has-art') ? '立绘模式' : '矢量形象') + '</span></div>'
@@ -1025,7 +814,7 @@ function wallpaperPanel(payload) {
   // ── 骨架 ────────────────────────────────────────────────────────────────
   // WIRE_VER：面板结构/行为变更时 +1。重注入（CDP 重连补注入）会重建元素，
   // 避免旧闭包的事件监听与新 __wdwPanel 状态 divergence（双闭包串味）。
-  var WIRE_VER = '7';   // 7：新增「界面风格」五套皮肤（系统页多一段 → 结构变更）；6：渲染模式诊断；5：暂停/退出拆分
+  var WIRE_VER = '6';   // 6：系统页新增渲染模式诊断；5：壁纸开关拆成暂停/退出（结构变更才 bump，纯样式不要）
   function build() {
     var el = document.getElementById(ID.root);
     if (el && el.getAttribute('data-wdw-ver') !== WIRE_VER) { try { el.remove(); } catch (_) {} el = null; }
@@ -1033,8 +822,6 @@ function wallpaperPanel(payload) {
       el = document.createElement('aside');
       el.id = ID.root;
       el.setAttribute('data-wdw-ver', WIRE_VER);
-      // 皮肤属性双写：<html> 管整页皮肤，面板根管面板自身（切换只改属性，不重建 DOM）
-      applySkinAttr(skinId(st.skin));
       el.innerHTML = [
         '<div class="p-head"><b class="p-title">壁纸</b><button class="p-x" type="button" data-act="close" title="关闭面板 · Esc" aria-label="关闭面板">✕</button></div>',
         '<div class="p-tabs" role="tablist"><span class="p-tabs__pill"></span>',
@@ -1079,12 +866,6 @@ function wallpaperPanel(payload) {
   function paint() {
     var el = document.getElementById(ID.root);
     if (!el) return;
-    // 皮肤属性幂等补齐：重注入/宿主重载后属性可能丢，这里兜一次（不重建 DOM）
-    var sk = skinId(st.skin);
-    if (el.getAttribute('data-wdw-skin') !== sk) el.setAttribute('data-wdw-skin', sk);
-    if (document.documentElement.getAttribute('data-wdw-skin') !== sk) {
-      document.documentElement.setAttribute('data-wdw-skin', sk);
-    }
     var tabs = el.querySelectorAll('.p-tab');
     for (var i = 0; i < tabs.length; i++) {
       var on = tabs[i].getAttribute('data-tab') === st.tab;
@@ -1123,7 +904,34 @@ function wallpaperPanel(payload) {
       // 暂停是服务端状态（.paused 标志），必须回填：否则重开面板按钮仍显示「暂停壁纸」，
       // 用户点了才发现"已经在暂停中"，看起来像按钮坏了。
       if (typeof d.paused === 'boolean') st.paused = d.paused;
+      // 动态效果能力（P0-2.3）：当前主题是否支持昼夜循环 / 视差
+      if (d.fx) st.fx = { daynight: !!d.fx.daynight, parallax: !!d.fx.parallax };
+      else st.fx = { daynight: false, parallax: false };
     });
+  }
+  /** 动态效果本地开关（缺省按主题能力；写 localStorage，与 background.js 读同一键）。 */
+  function fxPrefs() {
+    if (st.fxDaynight === null || st.fxParallax === null) {
+      try {
+        st.fxDaynight = localStorage.getItem(LS_FX_DAYNIGHT) !== 'off';
+        st.fxParallax = localStorage.getItem(LS_FX_PARALLAX) !== 'off';
+      } catch (_) { st.fxDaynight = true; st.fxParallax = true; }
+    }
+    return { daynight: st.fxDaynight, parallax: st.fxParallax };
+  }
+  /** 切换动态效果开关并即时生效（写 localStorage → 重注入背景让 background.js 重读）。 */
+  function setFx(key, on) {
+    try { localStorage.setItem(key, on ? 'on' : 'off'); } catch (_) {}
+    if (key === LS_FX_DAYNIGHT) st.fxDaynight = !!on;
+    else if (key === LS_FX_PARALLAX) st.fxParallax = !!on;
+    st.fxBusy = true; paint();
+    // 重注入当前主题背景（/api/inject 会重新 readCurrentThemeId + buildBackgroundExpr）
+    return req('/api/inject', {}).then(function (d) {
+      st.fxBusy = false;
+      if (d && d.injection) st.inj = d.injection;
+      if (!d || !d.ok) st.err = (d && d.error) || '动态效果应用失败（宿主未连接）';
+      paint();
+    }).catch(function () { st.fxBusy = false; st.err = '动态效果应用失败（服务未响应）'; paint(); });
   }
   function loadCustom() {
     return req('/api/custom-wallpapers').then(function (d) {
@@ -1259,7 +1067,7 @@ function wallpaperPanel(payload) {
         // 下面的 closest 全部落空 → 用户体感「点了没反应」（实测复现：target=ASIDE）。
         // 兜底：所有已知交互选择器都未命中时，用事件坐标 elementFromPoint 找回
         // 视觉目标（= 用户意图目标）。注意必须在主匹配之后判断，不干扰正常路径。
-        var KNOWN = '.p-tab,[data-src],[data-rf],[data-fav],[data-del],.p-card,[data-act],[data-fontcolor],[data-font],[data-skin],.p-seg button,.p-chips button,.p-btn';
+        var KNOWN = '.p-tab,[data-src],[data-rf],[data-fav],[data-del],.p-card,[data-act],[data-fontcolor],[data-font],.p-seg button,.p-chips button,.p-btn';
         if (typeof e.clientX === 'number' && !(t.closest && t.closest(KNOWN))) {
           var visual = document.elementFromPoint(e.clientX, e.clientY);
           if (visual && visual.closest && visual.closest(KNOWN)) t = visual;
@@ -1267,9 +1075,6 @@ function wallpaperPanel(payload) {
         // 页签
         var tabBtn = t.closest ? t.closest('.p-tab') : null;
         if (tabBtn) { setTab(tabBtn.getAttribute('data-tab')); return; }
-        // 系统页：界面风格（五套皮肤）
-        var skinBtn = t.closest ? t.closest('[data-skin]') : null;
-        if (skinBtn) { setSkin(skinBtn.getAttribute('data-skin')); return; }
         // 字体页：文字颜色（调色盘快捷预设；空串 = 恢复默认）
         var fcBtn = t.closest ? t.closest('[data-fontcolor]') : null;
         if (fcBtn) { setFont({ color: fcBtn.getAttribute('data-fontcolor') || '' }); paint(); return; }
@@ -1313,6 +1118,14 @@ function wallpaperPanel(payload) {
         if (card) {
           if (card.getAttribute('data-we')) applyWe(card.getAttribute('data-we'), card.getAttribute('title') || '');
           else if (card.getAttribute('data-name')) apply(card.getAttribute('data-name'), card.getAttribute('title') || '');
+          return;
+        }
+        // 动态效果开关（P0-2.3）：data-fx 直接切换，不等 data-act 分支
+        var fxSw = t.closest ? t.closest('[data-fx]') : null;
+        if (fxSw && !fxSw.disabled) {
+          var fk = fxSw.getAttribute('data-fx');
+          var fOn = !fxSw.classList.contains('wdw-on');
+          setFx(fk, fOn);
           return;
         }
         // 动作按钮
@@ -1416,14 +1229,6 @@ function wallpaperPanel(payload) {
     window.addEventListener('resize', guard(function () { if (st.open) movePill(el); }));
   }
 
-  /** 切皮肤：只改根节点属性 + 本地偏好，不重建 DOM（结构/事件一律不动）。 */
-  function setSkin(id) {
-    st.skin = skinId(id);
-    try { localStorage.setItem(LS_SKIN, st.skin); } catch (_) {}
-    applySkinAttr(st.skin);
-    paint();
-  }
-
   function setTab(id) {
     if (!TABS.some(function (t) { return t.id === id; })) return;
     st.tab = id;
@@ -1437,6 +1242,8 @@ function wallpaperPanel(payload) {
     if (id === 'system') {
       loadHealth().then(function () { if (st.tab === 'system') paint(); }).catch(function () {});
       loadMask().then(function () { if (st.tab === 'system') paint(); }).catch(function () {});
+      // 动态效果能力（st.fx）也会随当前壁纸变化，进系统页重读一次
+      loadWallpapers().then(function () { if (st.tab === 'system') paint(); }).catch(function () {});
     }
     // 关于页：每次进入都刷新一次更新状态（仍是先读缓存，只有过期才联网）
     if (id === 'about') {
@@ -1448,7 +1255,7 @@ function wallpaperPanel(payload) {
   function teardownAll() {
     var ids = ['wdw-rope-buddy', 'wdw-wallpaper-panel', 'wdw-dsh-ui-style',
       'wdw-rope-buddy-style', 'wdw-panel-style', 'wdw-font-style',
-      'wdw-theme-style', 'wdw-bg-video', 'wdw-bg-scene'];
+      'wdw-theme-style', 'wdw-bg-video', 'wdw-bg-scene', 'wdw-bg-fx'];
     for (var i = 0; i < ids.length; i++) {
       var e = document.getElementById(ids[i]);
       if (e) { try { e.remove(); } catch (_) {} }
@@ -1494,15 +1301,13 @@ function wallpaperPanel(payload) {
     close: api_close,
     toggle: function (v) { if (v === undefined) { st.open ? api_close() : api_open(); } else { v ? api_open() : api_close(); } },
     setTab: setTab,
-    setSkin: setSkin,
-    getSkin: function () { return skinId(st.skin); },
     refresh: function () { return Promise.all([loadWallpapers(), loadCustom(), loadHealth(), loadMask()]).then(function () { paint(); }).catch(function () {}); },
   };
   return { ok: true, id: ID.root };
 }
 
 function panelExpression(payload) {
-  var p = Object.assign({ ids: IDS, tabs: TABS, lsTab: LS_TAB, lsPrefs: LS_PREFS, lsRepo: LS_REPO, filters: REPO_FILTERS, lsFont: LS_FONT, fontColors: FONT_COLORS, fontSwatches: FONT_SWATCHES, skins: SKINS, lsSkin: LS_SKIN, pageSkins: PAGE_SKINS }, payload || {});
+  var p = Object.assign({ ids: IDS, tabs: TABS, lsTab: LS_TAB, lsPrefs: LS_PREFS, lsRepo: LS_REPO, filters: REPO_FILTERS, lsFont: LS_FONT, fontColors: FONT_COLORS, fontSwatches: FONT_SWATCHES, lsFxDaynight: LS_FX_DAYNIGHT, lsFxParallax: LS_FX_PARALLAX }, payload || {});
   return '(' + wallpaperPanel.toString() + ')(' + JSON.stringify(p) + ')';
 }
 

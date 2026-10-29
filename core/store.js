@@ -110,6 +110,12 @@ function listWallpapers(ctx) {
         // 暂停壁纸（可逆）与退出插件（.stopped，不可逆）是两个状态。
         // 面板要在打开时就知道"现在是暂停中"，否则按钮会显示成"暂停壁纸"却点不动。
         paused: pauseState.readPaused(dataDir).paused,
+        // 动态效果能力（P0-2.3）：当前主题是否支持昼夜循环（frames≥2 帧）/ 鼠标视差（parallax）。
+        // 面板据此显示开关并置灰不支持项，避免用户开了开关却没效果。
+        fx: {
+          daynight: !!(currentTheme && Array.isArray(currentTheme.frames) && currentTheme.frames.length >= 2),
+          parallax: !!(currentTheme && currentTheme.parallax && currentTheme.parallax.enabled !== false),
+        },
       },
     };
   } catch (e) {

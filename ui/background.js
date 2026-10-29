@@ -14,12 +14,153 @@
  *   · 层全部 z-index:-1 / fixed 全屏，不参与宿主交互
  */
 
-const IDS = { css: 'wdw-theme-style', video: 'wdw-bg-video', scene: 'wdw-bg-scene' };
+const IDS = { css: 'wdw-theme-style', video: 'wdw-bg-video', scene: 'wdw-bg-scene', fx: 'wdw-bg-fx' };
 const LS_VIDEO_MODE = 'wdw.videoMode';
+// 昼夜循环 / 视差：用户本地偏好键（关 = 禁用该动效；缺省按主题配置启用）
+const LS_FX_DAYNIGHT = 'wdw.fx.daynight';
+const LS_FX_PARALLAX = 'wdw.fx.parallax';
 
 function wallpaperBackground(payload) {
   var ID = payload.ids;
   var LS_VM = payload.lsVideoMode;
+  var LS_DAYNIGHT = payload.lsDaynight;
+  var LS_PARALLAX = payload.lsParallax;
+
+  // ── 鼠标视差（P0-2.2，纯前端零服务端改动）──────────────────────────────
+  // 背景层整体随鼠标做微小 3D 位移，幅度很小（默认 ±8px，可配），营造"壁纸有纵深"的呼吸感。
+  // 触发：宿主窗口内 mousemove；鼠标离开窗口后 30s 缓动回中（而不是瞬移，避免突兀）。
+  // 代价：只改 transform，不触发重排/重绘（合成器层），对 GPU/CPU 影响可忽略。
+  var parallax = null;
+  function parallaxCfg() {
+    if (parallax) return parallax;
+    var p = payload.parallax || null;
+    var on = p && p.enabled !== false;
+    try { if (localStorage.getItem(LS_PARALLAX) === 'off') on = false; } catch (_) {}
+    var amp = (p && Number.isFinite(Number(p.amp)) && Number(p.amp) > 0) ? Number(p.amp) : 8;
+    parallax = { on: on, amp: Math.min(40, amp), idleMs: (p && Number(p.idleMs) >= 0) ? Number(p.idleMs) : 30000 };
+    return parallax;
+  }
+  function installParallax(targets) {
+    var cfg = parallaxCfg();
+    if (!cfg.on || !targets || !targets.length) return;
+    var off = function () { for (var i = 0; i < targets.length; i++) { targets[i].style.transform = 'translate3d(0,0,0)'; } };
+    var idle = null;
+    function tick() {
+      if (idle) { clearTimeout(idle); idle = null; }
+      idle = setTimeout(off, cfg.idleMs);
+    }
+    document.addEventListener('mousemove', function (e) {
+      if (!cfg.on || document.hidden) return;
+      var w = window.innerWidth || 1, h = window.innerHeight || 1;
+      var nx = (e.clientX / w - 0.5) * 2;   // -1..1
+      var ny = (e.clientY / h - 0.5) * 2;
+      var dx = (-nx * cfg.amp).toFixed(2), dy = (-ny * cfg.amp).toFixed(2);
+      for (var i = 0; i < targets.length; i++) {
+        var t = targets[i];
+        var z = t.__wdwPz || 1;
+        t.style.transform = 'translate3d(' + (dx * z).toFixed(2) + 'px,' + (dy * z).toFixed(2) + 'px,0)';
+      }
+      tick();
+    }, { passive: true });
+    document.addEventListener('mouseleave', off);
+    tick();
+  }
+
+  // ── 昼夜循环（P0-1.2）：同主题多关键帧 + 本地时钟跨淡化 ────────────────
+  // 主题提供 frames（数组，元素含 time 小时数 + dataUrl），页面侧按「当前钟点」在
+  // 相邻关键帧间做 opacity 线性插值，分钟级平滑过渡、不跳变。运行时零网络零 AI 调用。
+  // 帧用绝对定位 div 叠加（z-index 递增 = 越晚越在上层），最上层通过 opacity 淡入淡出。
+  // 无 frames / 被用户关闭 / 解析失败 → 保持现状（单图背景），绝不破坏既有三路。
+  function normalizeFrames(raw) {
+    if (!raw || !raw.length) return null;
+    var out = [];
+    for (var i = 0; i < raw.length; i++) {
+      var f = raw[i];
+      if (!f) continue;
+      // 兼容两种来源：服务端 resolveFrames 产出 {time,url}；第三方直传可能用 {time,dataUrl}
+      var u = f.url || f.dataUrl;
+      if (!u) continue;
+      var t = Number(f.time);
+      if (!Number.isFinite(t)) continue;
+      out.push({ time: Math.min(23.999, Math.max(0, t)), url: String(u) });
+    }
+    out.sort(function (a, b) { return a.time - b.time; });
+    return out.length >= 2 ? out : null;
+  }
+  function daynightCfg() {
+    var on = !!payload.frames;
+    try { if (localStorage.getItem(LS_DAYNIGHT) === 'off') on = false; } catch (_) {}
+    return on;
+  }
+  /** 计算 t（0-24 小时）处两帧间的插值 [idxA, idxB, k(0..1)]；无环绕时返回 null 用单帧。 */
+  function daynightBlend(frames, t) {
+    var n = frames.length;
+    if (frames[0].time >= t || frames[n - 1].time <= t) {
+      // 跨午夜：首尾帧环绕插值
+      var a = frames[n - 1], b = frames[0];
+      var span = (b.time + 24) - a.time;
+      var k = span > 0 ? Math.min(1, Math.max(0, (t + 24 - a.time) / span)) : 0;
+      return [a, b, k];
+    }
+    for (var i = 0; i < n - 1; i++) {
+      var f0 = frames[i], f1 = frames[i + 1];
+      if (f0.time <= t && t <= f1.time) {
+        var sp = f1.time - f0.time;
+        var kk = sp > 0 ? Math.min(1, Math.max(0, (t - f0.time) / sp)) : 0;
+        return [f0, f1, kk];
+      }
+    }
+    return [frames[n - 1], frames[0], 0];
+  }
+  function localHour() {
+    var d = new Date();
+    return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+  }
+  function installDaynight() {
+    var frames = normalizeFrames(payload.frames);
+    var on = daynightCfg();
+    var fx = document.getElementById(ID.fx);
+    if (!on || !frames) {
+      if (fx && fx.parentNode) fx.parentNode.removeChild(fx);
+      return;
+    }
+    if (!fx) {
+      fx = document.createElement('div');
+      fx.id = ID.fx;
+      fx.setAttribute('data-fx', 'daynight');
+      fx.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:-1;pointer-events:none;overflow:hidden;';
+      (document.body || document.documentElement).insertBefore(fx, (document.body || document.documentElement).firstChild);
+    }
+    var want = frames.map(function (f) { return f.time + ':' + f.url.length; }).join('|');
+    if (fx.getAttribute('data-frames-key') !== want) {
+      fx.setAttribute('data-frames-key', want);
+      fx.innerHTML = '';
+      for (var i = 0; i < frames.length; i++) {
+        var d = document.createElement('div');
+        d.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;background:url(' + frames[i].url + ') center/cover no-repeat;will-change:opacity;';
+        d.setAttribute('data-fx-idx', String(i));
+        fx.appendChild(d);
+      }
+    }
+    function paint() {
+      var t = localHour();
+      var bl = daynightBlend(frames, t);
+      var kids = fx.children;
+      var aIdx = frames.indexOf(bl[0]), bIdx = frames.indexOf(bl[1]);
+      for (var j = 0; j < kids.length; j++) {
+        var el = kids[j];
+        var idx = Number(el.getAttribute('data-fx-idx'));
+        var o = 0;
+        if (idx === aIdx) o = 1 - bl[2];
+        else if (idx === bIdx) o = bl[2];
+        el.style.opacity = String(o);
+      }
+    }
+    paint();
+    if (!fx.__wdwDaynightTimer) {
+      fx.__wdwDaynightTimer = setInterval(paint, 60000);   // 每分钟重算一次，过渡足够平滑
+    }
+  }
 
   /** 视频加载：直链流式优先，失败回退 blob；用加载令牌丢弃过期回调（防旧 error 误判）。 */
   function loadVideo(ov, url) {
@@ -106,7 +247,19 @@ function wallpaperBackground(payload) {
       }
       if (sf.getAttribute('data-src-key') !== surl) { sf.setAttribute('data-src-key', surl); sf.src = surl; }
     }
-    return { ok: true, css: !!payload.css, video: !!payload.videoUrl, scene: !!payload.sceneUrl };
+
+    // ④ 增强层：昼夜循环（多帧跨淡化）——覆盖在图片背景之上，视频/场景之上同样可用
+    installDaynight();
+
+    // ⑤ 视差：给背景层（图片 #root 不动，视频/场景/多帧容器做 transform 位移）
+    var pxTargets = [];
+    if (ov && ov.parentNode) pxTargets.push(ov);
+    if (sf && sf.parentNode) pxTargets.push(sf);
+    var fx = document.getElementById(ID.fx);
+    if (fx && fx.parentNode) pxTargets.push(fx);
+    installParallax(pxTargets);
+
+    return { ok: true, css: !!payload.css, video: !!payload.videoUrl, scene: !!payload.sceneUrl, daynight: !!(payload.frames && daynightCfg()), parallax: parallaxCfg().on };
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e) };
   }
@@ -116,7 +269,7 @@ function wallpaperBackground(payload) {
 function backgroundUninstallExpression() {
   return '(function(){'
     + 'var removed=[];'
-    + '[' + JSON.stringify(IDS.css) + ',' + JSON.stringify(IDS.video) + ',' + JSON.stringify(IDS.scene) + ']'
+    + '[' + JSON.stringify(IDS.css) + ',' + JSON.stringify(IDS.video) + ',' + JSON.stringify(IDS.scene) + ',' + JSON.stringify(IDS.fx) + ']'
     + '.forEach(function(id){var e=document.getElementById(id);if(e){e.remove();removed.push(id);}});'
     + 'try{if(window.__wdwBgVideoObjUrl){URL.revokeObjectURL(window.__wdwBgVideoObjUrl);window.__wdwBgVideoObjUrl=null;}}catch(_){}'
     + 'return removed.join(", ")||"(无)";})()';
@@ -124,7 +277,7 @@ function backgroundUninstallExpression() {
 
 /** 生成背景注入表达式（自执行）。 */
 function backgroundExpression(payload) {
-  var p = Object.assign({ ids: IDS, lsVideoMode: LS_VIDEO_MODE }, payload || {});
+  var p = Object.assign({ ids: IDS, lsVideoMode: LS_VIDEO_MODE, lsDaynight: LS_FX_DAYNIGHT, lsParallax: LS_FX_PARALLAX }, payload || {});
   return '(' + wallpaperBackground.toString() + ')(' + JSON.stringify(p) + ')';
 }
 

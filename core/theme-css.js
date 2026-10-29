@@ -129,47 +129,28 @@ function resolveBackgroundAssets(p) {
           //   实测根因：卡片自带底色只有 rgba(255,255,255,.06)，表格外壳 wb-feed-content-shell 全透明，
           //   而 wb-home-page-pc(1364) ⊃ body(1024) ⊃ dock(928) ⊃ card 四层都没有实底 ⇒ 壁纸直接穿透。
           //   那块"窗户"是**壁纸图案**，不是图片没加载：摘掉壁纸层后白块即消失（已用像素差验证）。
-          //   ⚠️ 2026-10-29 用户反馈「资料库仍未适配」：当天把底板定成 .97（几乎实心）后，整页变成一大块
-          //     死黑，壁纸在该页完全看不到 —— 属于"为了可读性把适配性做没了"。
-          //   ⇒ 改为**分层**：外层页壳透壁纸（.62），可读性交给内层内容面（表格壳 .45 深 + 卡片白 .10）。
-          //     实测取值：.74 时壁纸对卡片影响 69 级（图案可辨）→ 现在 .62 + 内层 .45，总遮挡 ≈ .79，
-          //     图案只剩氛围感、看不出硬边，同时页边与卡片间隙能明确看到壁纸。
-          //   ⚠️ 不加 backdrop-filter（.82 + blur(18px) 观感最好，但 GPU 425% → 629%，≈多烧 2 核）。
-          P + '[class*="wb-home-page-pc"]' + X + '{background:rgba(13,15,20,.62) !important;border-radius:16px}',
+          //   修法：**只给最外层 wb-home-page-pc 一层底板**，内层显式 transparent（否则 .97 × 三层 ≈ 全黑），
+          //   卡片再抬 .07 白做层级；左侧知识库栏同款底板。
+          //   不透明度的取值是量出来的，别再往下调：
+          //     .74 → 壁纸对卡片的影响最大 69 级（窗户清晰可辨）
+          //     .92 → 最大 32 级（仍能看出窗框）
+          //     .97 → 干净（硬边的形状在 <10 级差异下看不出，人眼对边缘远比幅度敏感）
+          //   ⚠️ 也试过 .82 + backdrop-filter:blur(18px)：观感最好，但 GPU 进程从 425% 飙到 629%
+          //     （≈多烧 2 核，场景壁纸本身已在动画），代价不划算，撤掉。
+          P + '[class*="wb-home-page-pc"]' + X + '{background:rgba(13,15,20,.97) !important;border-radius:16px}',
           P + '[class*="wb-home-page-body"]' + X + ',' + P + '[class*="wb-home-guide-dock"]' + X + '{background:transparent !important}',
-          // 左侧知识库栏比内容区略实（.72），保证栏内文字在壁纸亮部也可读，同时与内容区分层不糊成一片
-          P + '[class*="knowledge-sidebar-pc"]' + X + '{background:rgba(13,15,20,.72) !important;border-radius:16px}',
-          // 「我的文件」抽屉面板（2026-10-29 扫描：原生近黑，与页壳同样处理）
-          P + '[class*="my-files-panel"]' + X + '{background:rgba(13,15,20,.62) !important}',
+          P + '[class*="knowledge-sidebar-pc"]' + X + '{background:rgba(13,15,20,.97) !important;border-radius:16px}',
           // 只给卡片本体（-card-pc），别用 [class*="wb-home-guide-card"] —— 那会连 -title-pc / -desc-pc
           // 一起上色，文字底下出现一块块浅色方块（实测踩过）。
-          P + '[class*="wb-home-guide-card-pc"]' + X + '{background:rgba(255,255,255,.10) !important}',
+          P + '[class*="wb-home-guide-card-pc"]' + X + '{background:rgba(255,255,255,.07) !important}',
           P + '[class*="wb-home-guide-card-list"]' + X + ',' + P + '[class*="wb-home-guide-header"]' + X + '{background:transparent !important}',
-          // 表格/列表外壳：不再只是 .05 白（那是配 .97 死底用的），改为深底 .45 —— 行内文字直接压在
-          // 壁纸上会花，深底 + 外层 .62 合计 .79，既保读又不至于让页面变死黑。
-          P + '[class*="wb-feed-content-shell"]' + X + '{background:rgba(13,15,20,.45) !important;border:1px solid rgba(255,255,255,.08) !important;border-radius:12px}',
+          P + '[class*="wb-feed-content-shell"]' + X + '{background:rgba(255,255,255,.05) !important;border-radius:12px}',
           // 2026-10-29「报告卡片背后一片死黑」事故：定时任务报告页的 automation-run-group__item
           // 自带**不透明**底（实测 rgb(10,10,10) 与 rgb(22,22,25)，848×400 两块，把壁纸盖死；
           // 我们的选择器在该页 0 命中，纯宿主原生样式）。改半透明玻璃底：壁纸透出、文字仍可读。
           // 取值 .62：壁纸是深色星空场景时正文对比足够；同样不加 backdrop-filter（GPU 代价，见上）。
           // 双 token 连写匹配（"__item __item--"）只命中卡片根，不会误染标题等内部元素。
           P + '[class*="automation-run-group__item automation-run-group__item--"]' + X + '{background:rgba(13,15,20,.62) !important;border:1px solid rgba(255,255,255,.10) !important}',
-          // 同批扫描（2026-10-29）发现：定时任务页「本会话用量」卡片 atm-task-card 原生也是实心黑，
-          // 与上面同一处理（.62 玻璃底 + 细边），保持全站卡片观感一致。
-          P + '[class*="atm-task-card"]' + X + '{background:rgba(13,15,20,.62) !important;border:1px solid rgba(255,255,255,.10) !important}',
-          // 2026-10-29 逐按钮扫描补漏（宿主原生 rgb(36,36,36) 实心黑）：
-          //   · 下拉气泡 wb-popover（资料库「新建/最近/本地产物」菜单）
-          //   · 新建空间弹窗 workspace-tree-create-space-dialog-pc
-          //   · 弹层遮罩 workspace-tree-modal-overlay-pc 原 rgba(0,0,0,.8)，压到 .55 让壁纸仍可辨
-          // 弹层不比页面，内容密集 → 保留 .86~.90 的实度，只让壁纸成为一层极淡底纹。
-          P + '[class*="wb-popover"]' + X + '{background:rgba(28,30,36,.86) !important}',
-          P + '[class*="workspace-tree-create-space-dialog-pc"]' + X + '{background:rgba(22,24,30,.90) !important}',
-          P + '[class*="workspace-tree-modal-overlay-pc"]' + X + '{background:rgba(0,0,0,.55) !important}',
-          // 同批扫描：WorkDaddy 注入层（wbs-*）的弹层同样是 rgb(36,36,36) 实心黑。
-          //   模态框用 :not([class*="wbs-modal-"]) 只命中根节点，避免把 -title/-body/-actions 也上色。
-          P + '[class*="wbs-modal"]:not([class*="wbs-modal-"])' + X + '{background:rgba(22,24,30,.90) !important}',
-          P + '[class*="wbs-modal-mask"]' + X + '{background:rgba(0,0,0,.55) !important}',
-          P + '[class*="wbs-status-popover"]' + X + ',' + P + '[class*="wbs-credit-summary-popover"]' + X + ',' + P + '[class*="wbs-telemetry-tooltip"]' + X + '{background:rgba(28,30,36,.88) !important}',
           // 2026-10-14 二轮：左侧任务栏里成片发黑的小块 —— 同样是 5.8.2 新增的不透明底 rgb(31,31,31)：
           //   小节标签 .conversation-section-label（任务/分组）、小节头 [class*="_headerTopPadding_"]、
           //   消息队列 .conversation-message-queue、短标签 [class*="_capsule_"]、
@@ -230,4 +211,39 @@ function resolveBackgroundAssets(p) {
   return { bgCssStr, bgVideoUrl, bgSceneUrl };
 }
 
-module.exports = { resolveBackgroundAssets, readMask, resolveBackgroundPath };
+/**
+ * 解析昼夜循环多帧素材（P0-1.2）：theme.frames = [{ time: 小时(0-24), file|dataUrl }]。
+ * 返回 [{ time, url(dataURL) }]，不足 2 帧 / 全部解析失败 → null（页面侧保持单图现状）。
+ * 帧文件相对主题目录解析；支持 file（读盘转 dataURL）与 dataUrl（透传）两种来源。
+ */
+function resolveFrames(p) {
+  const { theme, id, themesDir } = p;
+  const raw = theme && Array.isArray(theme.frames) ? theme.frames : null;
+  if (!raw) return null;
+  const { safeId } = resolveBackgroundPath(themesDir, theme || {}, id);
+  const themeRoot = path.join(themesDir, safeId);
+  const out = [];
+  for (const f of raw) {
+    if (!f || typeof f !== 'object') continue;
+    const t = Number(f.time);
+    if (!Number.isFinite(t)) continue;
+    let url = null;
+    try {
+      if (typeof f.dataUrl === 'string' && /^data:/.test(f.dataUrl)) {
+        url = f.dataUrl;
+      } else if (typeof f.file === 'string') {
+        const fp = path.join(themeRoot, String(f.file).replace(/^\.\.?[/\\]/, ''));
+        if (fs.existsSync(fp)) {
+          const ext = path.extname(fp).toLowerCase();
+          const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+          url = 'data:' + mime + ';base64,' + fs.readFileSync(fp).toString('base64');
+        }
+      }
+    } catch (_) { /* 单帧失败跳过 */ }
+    if (url) out.push({ time: t, url });
+  }
+  out.sort((a, b) => a.time - b.time);
+  return out.length >= 2 ? out : null;
+}
+
+module.exports = { resolveBackgroundAssets, readMask, resolveBackgroundPath, resolveFrames };
