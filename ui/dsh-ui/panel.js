@@ -160,6 +160,46 @@ function skinId(v) {
   return 'dark-tech';
 }
 
+// ── 整页皮肤（2026-10-29：「严格按参考图还原整页」）────────────────────────────
+// 与面板皮肤同 id、同一次切换：面板换肤的同时把宿主页面（侧栏/主区/卡片壳/输入/弹层）也按该风格重绘。
+// 设计取舍：
+//   · 参考图本身就是"实底界面"，所以整页皮肤会让壁纸退化为边缘点缀（dark/glass 半透明可透出，
+//     minimal 近实底）——这是"还原参考图"与"壁纸可见"的直接冲突，按用户选择以参考图为准。
+//   · 规则用模板 + 变量（--wpg-*），5 套只换变量，避免 5×N 条硬编码互相打架。
+//   · 选择器带两个 `:not(#…)` 把特异性抬到 (2,x,0)，稳压 theme-css 的 (1,x,0) 透明化规则。
+const PAGE_SKINS = {
+  'dark-tech': {
+    font: '"SF Pro Text","Source Han Sans SC","Microsoft YaHei UI",sans-serif',
+    ink: '#EDF2F7', ink2: 'rgba(214,225,235,.72)', accent: '#39D7FF', accent2: '#1FA8D0',
+    sidebar: 'rgba(20,25,30,.80)', main: 'rgba(15,19,24,.62)', card: 'rgba(42,48,54,.90)',
+    line: 'rgba(255,255,255,.09)', input: 'rgba(255,255,255,.06)', pop: 'rgba(24,28,34,.94)', r: '12px',
+  },
+  'shadow-glass': {
+    font: '"PingFang SC","Microsoft YaHei UI",sans-serif',
+    ink: '#E8ECF4', ink2: 'rgba(232,236,244,.72)', accent: '#4F8CFF', accent2: '#2E6FE0',
+    sidebar: 'rgba(24,30,38,.62)', main: 'rgba(18,23,29,.42)', card: 'rgba(30,37,46,.66)',
+    line: 'rgba(255,255,255,.12)', input: 'rgba(255,255,255,.07)', pop: 'rgba(28,34,42,.90)', r: '14px',
+  },
+  holo: {
+    font: '"HarmonyOS Sans SC","Source Han Sans SC","Microsoft YaHei UI",sans-serif',
+    ink: '#E8F7FF', ink2: 'rgba(196,229,255,.74)', accent: '#37C6FF', accent2: '#7A5CFF',
+    sidebar: 'rgba(8,24,50,.82)', main: 'rgba(6,18,40,.60)', card: 'rgba(12,32,64,.72)',
+    line: 'rgba(96,206,255,.28)', input: 'rgba(88,180,255,.10)', pop: 'rgba(10,28,58,.94)', r: '12px',
+  },
+  neon: {
+    font: '"Rajdhani","Source Han Sans SC","Microsoft YaHei UI",sans-serif',
+    ink: '#F6EBFF', ink2: 'rgba(220,190,255,.76)', accent: '#00E5FF', accent2: '#FF2ED1',
+    sidebar: 'rgba(22,8,36,.84)', main: 'rgba(14,6,26,.62)', card: 'rgba(28,10,44,.76)',
+    line: 'rgba(180,110,255,.30)', input: 'rgba(150,80,255,.12)', pop: 'rgba(24,10,40,.94)', r: '14px',
+  },
+  minimal: {
+    font: '"Inter","Source Han Sans SC","Microsoft YaHei UI",sans-serif',
+    ink: '#1E1F22', ink2: '#6B7280', accent: '#2B6BFF', accent2: '#1D4FD8',
+    sidebar: '#F7F8FA', main: '#FFFFFF', card: '#F2F3F5',
+    line: '#E7E9EE', input: '#F5F6F8', pop: '#FFFFFF', r: '12px',
+  },
+};
+
 /** 字体页常量。颜色 '' = 不覆盖（跟随主题）；其余是 #rrggbb。字体列表由服务端 /api/fonts 提供。 */
 const LS_FONT = 'wdw.font';
 const FONT_COLORS = [['#ffffff', '纯白'], ['#000000', '纯黑'], ['', '默认']];
@@ -195,6 +235,59 @@ function wallpaperPanel(payload) {
       out.push(sel + '{' + s.vars + '}' + s.css.split('@S@').join(sel));
     }
     return out.join('\n');
+  }
+  // 整页皮肤：模板 + 每套变量。属性挂在 <html> 上，切肤即整页重绘（面板/宿主同步）。
+  var PAGE = payload.pageSkins || {};
+  function pageSkinCss() {
+    var out = [];
+    for (var i = 0; i < SKINS.length; i++) {
+      var id = SKINS[i].id;
+      var v = PAGE[id] || PAGE['dark-tech'] || {};
+      var H = 'html[data-wdw-skin="' + id + '"]';
+      // 两个 :not(#…) 把特异性抬到 (2,x,0)：theme-css 的透明化/可读面规则是 (1,x,0)，必须稳压
+      var N = ':not(#wdw-noop):not(#wdw-noop2)';
+      out.push(
+        H + '{--wpg-ink:' + v.ink + ';--wpg-ink-2:' + v.ink2 + ';--wpg-accent:' + v.accent
+        + ';--wpg-line:' + v.line + ';--wpg-card:' + v.card + ';--wpg-input:' + v.input
+        + ';--wpg-pop:' + v.pop + ';--wpg-sidebar:' + v.sidebar + ';--wpg-main:' + v.main
+        + ';--wpg-r:' + v.r + ';--wpg-font:' + v.font + ';--wb-accent:' + v.accent + '}',
+        H + ' body' + N + '{font-family:var(--wpg-font) !important;color:var(--wpg-ink) !important}',
+        H + ' .conversation-list' + N + ',' + H + ' [data-view-id=sidebar]' + N + ','
+          + H + ' aside:not(#wdw-wallpaper-panel)' + N
+          + '{background:var(--wpg-sidebar) !important;border-right:1px solid var(--wpg-line) !important}',
+        H + ' .teams-container' + N + ',' + H + ' .main-content' + N + ',' + H + ' [data-view-id]' + N
+          + ',' + H + ' .conversation-shell' + N + '{background:var(--wpg-main) !important}',
+        H + ' [class*="wb-home-page-pc"]' + N + ',' + H + ' [class*="knowledge-sidebar-pc"]' + N + ','
+          + H + ' [class*="wb-feed-content-shell"]' + N + ',' + H + ' .automation-run-group__item' + N + ','
+          + H + ' [class*="atm-task-card"]' + N + ',' + H + ' [class*="my-files-panel"]' + N
+          + '{background:var(--wpg-card) !important;border:1px solid var(--wpg-line) !important;border-radius:var(--wpg-r) !important}',
+        H + ' .cr-input-container' + N + ',' + H + ' [class*="chat-input"]' + N
+          + '{background:var(--wpg-input) !important;border-color:var(--wpg-line) !important}',
+        H + ' .wb-popover' + N + ',' + H + ' [class*="wbs-modal"]' + N + ','
+          + H + ' [class*="wbs-status-popover"]' + N + ',' + H + ' [class*="wbs-credit-summary-popover"]' + N + ','
+          + H + ' [class*="workspace-tree-create-space-dialog-pc"]' + N
+          + '{background:var(--wpg-pop) !important;border-color:var(--wpg-line) !important}',
+        // 组件级：宿主按钮 / 开关 / 焦点环 / 滚动条 —— 只换皮，不改尺寸与行为
+        H + ' .wb-button' + N + '{background:color-mix(in srgb,var(--wpg-accent) 16%,transparent) !important;'
+          + 'border-color:color-mix(in srgb,var(--wpg-accent) 45%,transparent) !important;color:var(--wpg-ink) !important}',
+        H + ' .wb-button--primary' + N + ',' + H + ' .wb-switch.wb-switch--checked' + N
+          + '{background:var(--wpg-accent) !important;border-color:var(--wpg-accent) !important;color:#04121f !important}',
+        H + ' :focus-visible{outline-color:var(--wpg-accent) !important}',
+        H + ' ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--wpg-accent) 34%,transparent) !important}',
+        // 文本容器兜底：宿主若把字设成白色，在浅色皮肤下会看不见 → 用更高特异性压回皮肤文字色
+        H + ' .cr-message-list' + N + ',' + H + ' [class*="wb-home-page-pc"]' + N + ','
+          + H + ' .main-content' + N + ',' + H + ' .conversation-list' + N
+          + '{color:var(--wpg-ink) !important;-webkit-text-fill-color:var(--wpg-ink) !important}',
+        H + ' ::selection{background:var(--wpg-accent) !important;color:#04121f !important}'
+      );
+    }
+    return out.join('\n');
+  }
+  /** 皮肤属性双写：<html> 管整页，面板根管面板自身（两份规则各自独立生效）。 */
+  function applySkinAttr(id) {
+    document.documentElement.setAttribute('data-wdw-skin', id);
+    var el = document.getElementById(ID.root);
+    if (el) el.setAttribute('data-wdw-skin', id);
   }
   // 宿主环境：闭包里存在 api(path, opts)（自带 X-WorkDaddy-Token）。独立环境取不到 → 走 fetch。
   // typeof 对未声明变量安全；payload.hostApi 为假时短路，连 typeof 都不求值。
@@ -428,7 +521,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-foot{flex:0 0 auto;padding:9px 14px;border-top:1px solid rgba(255,255,255,.10);font-size:11px;color:var(--wdw-ink-3);display:flex;gap:8px;align-items:center}',
       // 键盘可达：注入层默认没有焦点环（宿主 CSS 会吃掉），键盘用户看不到当前焦点
       '#' + ID.root + ' button:focus-visible,#' + ID.root + ' input:focus-visible,#' + ID.root + ' [tabindex]:focus-visible{outline:2px solid color-mix(in srgb,var(--wdw-accent) 80%,transparent);outline-offset:2px}',
-    ].join('\n') + '\n' + skinCss();
+    ].join('\n') + '\n' + skinCss() + '\n' + pageSkinCss();
     if (s.textContent !== css) s.textContent = css;
   }
 
@@ -940,8 +1033,8 @@ function wallpaperPanel(payload) {
       el = document.createElement('aside');
       el.id = ID.root;
       el.setAttribute('data-wdw-ver', WIRE_VER);
-      // 皮肤属性挂在根上：CSS 侧的 `[data-wdw-skin="x"]` 规则据此生效（切换不重建 DOM）
-      el.setAttribute('data-wdw-skin', skinId(st.skin));
+      // 皮肤属性双写：<html> 管整页皮肤，面板根管面板自身（切换只改属性，不重建 DOM）
+      applySkinAttr(skinId(st.skin));
       el.innerHTML = [
         '<div class="p-head"><b class="p-title">壁纸</b><button class="p-x" type="button" data-act="close" title="关闭面板 · Esc" aria-label="关闭面板">✕</button></div>',
         '<div class="p-tabs" role="tablist"><span class="p-tabs__pill"></span>',
@@ -989,6 +1082,9 @@ function wallpaperPanel(payload) {
     // 皮肤属性幂等补齐：重注入/宿主重载后属性可能丢，这里兜一次（不重建 DOM）
     var sk = skinId(st.skin);
     if (el.getAttribute('data-wdw-skin') !== sk) el.setAttribute('data-wdw-skin', sk);
+    if (document.documentElement.getAttribute('data-wdw-skin') !== sk) {
+      document.documentElement.setAttribute('data-wdw-skin', sk);
+    }
     var tabs = el.querySelectorAll('.p-tab');
     for (var i = 0; i < tabs.length; i++) {
       var on = tabs[i].getAttribute('data-tab') === st.tab;
@@ -1324,8 +1420,7 @@ function wallpaperPanel(payload) {
   function setSkin(id) {
     st.skin = skinId(id);
     try { localStorage.setItem(LS_SKIN, st.skin); } catch (_) {}
-    var el = document.getElementById(ID.root);
-    if (el) el.setAttribute('data-wdw-skin', st.skin);
+    applySkinAttr(st.skin);
     paint();
   }
 
@@ -1407,7 +1502,7 @@ function wallpaperPanel(payload) {
 }
 
 function panelExpression(payload) {
-  var p = Object.assign({ ids: IDS, tabs: TABS, lsTab: LS_TAB, lsPrefs: LS_PREFS, lsRepo: LS_REPO, filters: REPO_FILTERS, lsFont: LS_FONT, fontColors: FONT_COLORS, fontSwatches: FONT_SWATCHES, skins: SKINS, lsSkin: LS_SKIN }, payload || {});
+  var p = Object.assign({ ids: IDS, tabs: TABS, lsTab: LS_TAB, lsPrefs: LS_PREFS, lsRepo: LS_REPO, filters: REPO_FILTERS, lsFont: LS_FONT, fontColors: FONT_COLORS, fontSwatches: FONT_SWATCHES, skins: SKINS, lsSkin: LS_SKIN, pageSkins: PAGE_SKINS }, payload || {});
   return '(' + wallpaperPanel.toString() + ')(' + JSON.stringify(p) + ')';
 }
 

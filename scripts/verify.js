@@ -965,6 +965,15 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '皮肤钉子：选择要落本地（LS_SKIN），否则重开就回默认');
     ok(/skins: SKINS, lsSkin: LS_SKIN/.test(panelSrc),
       '皮肤钉子：皮肤表必须走 payload —— 面板会被 toString() 注入，模块级常量在页面侧取不到（实测 4 次注入全失败）');
+    // ── 整页皮肤（2026-10-29「按参考图还原整页」）──
+    ok(/pageSkins: PAGE_SKINS/.test(panelSrc) && /var PAGE = payload\.pageSkins/.test(panelSrc),
+      '整页皮肤钉子：PAGE_SKINS 必须走 payload（同 toString 注入问题）');
+    ok(/html\[data-wdw-skin="' \+ id \+ '"\]/.test(panelSrc) && /:not\(#wdw-noop\):not\(#wdw-noop2\)/.test(panelSrc),
+      '整页皮肤钉子：规则挂在 html[data-wdw-skin] 上，且用双 :not 抬到 (2,x,0) —— theme-css 的透明化规则是 (1,x,0)，不抬会被压回透明');
+    ok(/function applySkinAttr\(id\)[\s\S]{0,220}documentElement\.setAttribute\('data-wdw-skin'/.test(panelSrc),
+      '整页皮肤钉子：切肤必须双写 <html> 与面板根（只写面板 = 整页不生效）');
+    ok(/aside:not\(#wdw-wallpaper-panel\)/.test(panelSrc),
+      '整页皮肤钉子：aside 规则必须排除面板自身，否则面板被当成侧栏刷成侧栏底色');
     ok(/function skinId\(v\) \{\s*\n?\s*for/.test(panelSrc),
       '皮肤钉子：非法 id 必须回落默认，别让拼错的名字把面板变成半套样式');
     // 真正的门禁：把注入表达式构造出来，确认页面侧能解析且确实带上了皮肤表
