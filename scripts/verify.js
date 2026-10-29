@@ -1072,6 +1072,25 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '动态效果钉子：teardown 拆除清单要含 wdw-bg-fx（否则退出插件会残留多帧层）');
   }
 
+  // ── 场景属性可视化调节（P0-2.3：读 project.json 的 general.properties 生成控件）──
+  {
+    const weSrc = readT('core/we.js');
+    ok(/function readSceneProperties/.test(weSrc) && /general\.properties/.test(weSrc),
+      '场景属性钉子：readSceneProperties 读 project.json 的 general.properties（WE 官方可调属性契约）');
+    ok(/\['bool', 'slider', 'color', 'combo'\]/.test(weSrc),
+      '场景属性钉子：属性类型白名单 bool/slider/color/combo（未知类型降级为只读展示，不臆造控件）');
+    ok(/function applySceneProperties/.test(weSrc) && /weUserProperties/.test(weSrc),
+      '场景属性钉子：applySceneProperties 落盘 weUserProperties（透传给注入表达式，页面侧 __weSeedProps 写回）');
+    ok(/typeof v === 'boolean' \|\| typeof v === 'number' \|\| typeof v === 'string'/.test(weSrc),
+      '场景属性钉子：属性值只接受标量（boolean/number/string），杜绝注入任意结构');
+    const routesSrc3 = readT('server/routes.js');
+    ok(/GET', '\/api\/we-properties'/.test(routesSrc3) && /POST', '\/api\/we-properties'/.test(routesSrc3),
+      '场景属性钉子：GET/POST /api/we-properties 路由已注册');
+    const bgSrc2 = readT('ui/background.js');
+    ok(/sceneProps/.test(bgSrc2) && /__weSeedProps/.test(bgSrc2) && /applyProps/.test(bgSrc2),
+      '场景属性钉子：background.js 要把 sceneProps 经 __weSeedProps/applyProps 写进 WebWallGL 渲染器（含跨源 postMessage 兜底）');
+  }
+
   // ── 暂停 / 退出分离（2026-10-28「关闭壁纸 ≈ 卸载」的回归钉）──────────────────
   //  背景：旧版只有一个「关闭壁纸」= 写 .stopped + 服务退出 + companion 不再拉起，
   //  想「先关一会儿」的用户实际执行了「卸载」，且面板一起消失、无法自救。

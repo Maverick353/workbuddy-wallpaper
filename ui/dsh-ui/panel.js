@@ -103,6 +103,9 @@ function wallpaperPanel(payload) {
     render: null,                 // WebGL 后端探测结果（软件渲染会让场景壁纸发糊，见 renderInfo）
     fx: null,                     // 当前主题动态效果能力 { daynight, parallax }（来自 /api/wallpapers）
     fxDaynight: null, fxParallax: null, fxBusy: false,  // 昼夜循环/视差开关（null=读取中）
+    // 场景属性（P0-2.3）：当前场景 general.properties 的可调属性表 + 已落盘值 + 忙碌态。
+    // scProps 为 null = 当前壁纸非场景 / 无属性 / 未读取；编辑时先改 scProps 本地，提交后回写。
+    scProps: null, scPropsBusy: false, scPropsMsg: '',
   };
 
   function prefs(patch) {
@@ -289,6 +292,10 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' input[type=color]{width:40px;height:24px;padding:0;border:1px solid var(--wdw-glass-line);border-radius:8px;background:transparent;cursor:pointer}',
       '#' + ID.root + ' input[type=color]::-webkit-color-swatch-wrapper{padding:2px}',
       '#' + ID.root + ' input[type=color]::-webkit-color-swatch{border:0;border-radius:5px}',
+      // 场景属性控件（P0-2.3）：颜色标签 + 下拉
+      '#' + ID.root + ' .p-color{display:flex;align-items:center;gap:8px;flex:0 0 auto}',
+      '#' + ID.root + ' .p-color span{font-size:11px;color:var(--wdw-ink-3);font-family:ui-monospace,SFMono-Regular,Consolas,monospace}',
+      '#' + ID.root + ' .p-sel{height:26px;padding:0 8px;border-radius:8px;border:1px solid var(--wdw-glass-line,rgba(255,255,255,.12));background:rgba(255,255,255,.05);color:inherit;font-size:12px;cursor:pointer;max-width:140px}',
       '#' + ID.root + ' .p-swatches{display:flex;flex-wrap:wrap;gap:6px;max-width:146px;justify-content:flex-end}',
       '#' + ID.root + ' .p-swatch{width:22px;height:22px;padding:0;border-radius:6px;border:1px solid rgba(255,255,255,.28);cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25)}',
       '#' + ID.root + ' .p-swatch:hover{transform:scale(1.12)}',
@@ -558,6 +565,46 @@ function wallpaperPanel(payload) {
           + sw(LS_FX_DAYNIGHT, 'fx-daynight', '昼夜循环', cap.daynight ? '按本地时间在日/夜帧间平滑过渡（需壁纸自带多帧）' : '当前壁纸无多帧素材，暂不支持', cap.daynight, dnOn)
           + sw(LS_FX_PARALLAX, 'fx-parallax', '鼠标视差', cap.parallax ? '背景随鼠标轻微位移，鼠标离开后自动回中' : '当前壁纸未开启视差', cap.parallax, pxOn)
           + (st.fxBusy ? '<div class="p-hint">正在应用动态效果…</div>' : '')
+          + '</div>';
+      })()
+      // ②c 场景属性（P0-2.3）：当前壁纸是 WE 场景且带 general.properties 时，显示可调控件。
+      //     类型：bool（开关）/ slider（min-max 滑块）/ color（RGB 色块）/ combo（下拉）。
+      //     改动即时写回（POST /api/we-properties），服务端落盘 + 重注入。
+      + (function () {
+        var p = st.scProps;
+        if (!p || !p.length) return '';
+        function row(item) {
+          var key = item.key, label = item.text, t = item.type;
+          if (t === 'bool') {
+            return '<div class="p-row"><span class="p-row-l"><b>' + esc(label) + '</b><i>' + esc(key) + '</i></span>'
+              + '<button type="button" class="p-sw' + (item.value ? ' wdw-on' : '') + '" data-scprop="' + esc(key) + '" data-type="bool" data-v="' + (item.value ? '1' : '0') + '" role="switch" aria-checked="' + (item.value ? 'true' : 'false') + '"></button></div>';
+          }
+          if (t === 'slider') {
+            return '<div class="p-row"><span class="p-row-l"><b>' + esc(label) + '</b><i>' + esc(key) + ' · ' + Number(item.value).toFixed(3) + '</i></span></div>'
+              + '<input class="p-range" data-scprop="' + esc(key) + '" data-type="slider" type="range" min="' + item.min + '" max="' + item.max + '" step="' + Math.max(Math.abs(item.max - item.min) / 100, 0.001) + '" value="' + item.value + '">';
+          }
+          if (t === 'color') {
+            var rgb = String(item.value).trim().split(/\s+/).map(function (x) { return Math.round(Math.min(1, Math.max(0, Number(x) || 0)) * 255); });
+            var hex = '#' + rgb.map(function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+            return '<div class="p-row"><span class="p-row-l"><b>' + esc(label) + '</b><i>' + esc(key) + '</i></span>'
+              + '<label class="p-color"><input type="color" data-scprop="' + esc(key) + '" data-type="color" value="' + hex + '"><span>' + hex + '</span></label></div>';
+          }
+          if (t === 'combo') {
+            var opts = item.options || [];
+            return '<div class="p-row"><span class="p-row-l"><b>' + esc(label) + '</b><i>' + esc(key) + '</i></span>'
+              + '<select class="p-sel" data-scprop="' + esc(key) + '" data-type="combo">'
+              + opts.map(function (o, i) { return '<option value="' + i + '"' + (Number(item.value) === i ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('')
+              + '</select></div>';
+          }
+          // 未知/文本类型：只读展示当前值
+          return '<div class="p-row"><span class="p-row-l"><b>' + esc(label) + '</b><i>' + esc(key) + '</i></span>'
+            + '<span class="p-hint p-tag">' + esc(String(item.value)) + '</span></div>';
+        }
+        return '<div class="p-sec"><span class="p-sec-t">场景属性</span>'
+          + p.map(row).join('')
+          + '<div class="p-row"><span class="p-hint">'
+          + (st.scPropsBusy ? '正在应用…' : (st.scPropsMsg ? esc(st.scPropsMsg) : '改动即时生效并保存到该壁纸'))
+          + '</span></div>'
           + '</div>';
       })()
       // ③ 吉祥物
@@ -907,7 +954,43 @@ function wallpaperPanel(payload) {
       // 动态效果能力（P0-2.3）：当前主题是否支持昼夜循环 / 视差
       if (d.fx) st.fx = { daynight: !!d.fx.daynight, parallax: !!d.fx.parallax };
       else st.fx = { daynight: false, parallax: false };
+      // 场景属性（P0-2.3）：当前壁纸是 WE 场景且有 weId 时，拉取可调属性表
+      if (d.weId) return loadSceneProps(String(d.weId));
     });
+  }
+  /** 拉取场景可调属性（GET /api/we-properties?weId=）。失败不阻塞主流程。 */
+  function loadSceneProps(weId) {
+    return req('/api/we-properties?weId=' + encodeURIComponent(weId)).then(function (d) {
+      if (d && d.ok && Array.isArray(d.properties) && d.properties.length) {
+        st.scProps = d.properties;
+      } else {
+        st.scProps = null;
+      }
+    }).catch(function () { st.scProps = null; });
+  }
+  /** 场景属性值本地改动（未提交）。 */
+  function setSceneProp(key, value) {
+    if (!st.scProps) return;
+    for (var i = 0; i < st.scProps.length; i++) {
+      if (st.scProps[i].key === key) { st.scProps[i].value = value; break; }
+    }
+    paint();
+  }
+  /** 提交场景属性（POST /api/we-properties）→ 服务端落盘 + 重注入。 */
+  function commitSceneProps() {
+    if (!st.scProps) return Promise.resolve();
+    var props = {};
+    st.scProps.forEach(function (p) { props[p.key] = p.value; });
+    st.scPropsBusy = true; st.scPropsMsg = ''; paint();
+    return req('/api/we-properties', { id: 'standalone', properties: props }).then(function (d) {
+      st.scPropsBusy = false;
+      if (d && d.ok) {
+        st.scPropsMsg = d.applied === false ? '已保存（宿主未连接，恢复后生效）' : '已应用';
+      } else {
+        st.scPropsMsg = (d && d.error) || '应用失败';
+      }
+      paint();
+    }).catch(function () { st.scPropsBusy = false; st.scPropsMsg = '应用失败（服务未响应）'; paint(); });
   }
   /** 动态效果本地开关（缺省按主题能力；写 localStorage，与 background.js 读同一键）。 */
   function fxPrefs() {
@@ -1067,7 +1150,7 @@ function wallpaperPanel(payload) {
         // 下面的 closest 全部落空 → 用户体感「点了没反应」（实测复现：target=ASIDE）。
         // 兜底：所有已知交互选择器都未命中时，用事件坐标 elementFromPoint 找回
         // 视觉目标（= 用户意图目标）。注意必须在主匹配之后判断，不干扰正常路径。
-        var KNOWN = '.p-tab,[data-src],[data-rf],[data-fav],[data-del],.p-card,[data-act],[data-fontcolor],[data-font],.p-seg button,.p-chips button,.p-btn';
+        var KNOWN = '.p-tab,[data-src],[data-rf],[data-fav],[data-del],.p-card,[data-act],[data-fontcolor],[data-font],[data-scprop],.p-seg button,.p-chips button,.p-btn';
         if (typeof e.clientX === 'number' && !(t.closest && t.closest(KNOWN))) {
           var visual = document.elementFromPoint(e.clientX, e.clientY);
           if (visual && visual.closest && visual.closest(KNOWN)) t = visual;
@@ -1118,6 +1201,15 @@ function wallpaperPanel(payload) {
         if (card) {
           if (card.getAttribute('data-we')) applyWe(card.getAttribute('data-we'), card.getAttribute('title') || '');
           else if (card.getAttribute('data-name')) apply(card.getAttribute('data-name'), card.getAttribute('title') || '');
+          return;
+        }
+        // 场景属性：bool 开关（P0-2.3）—— 点击切换并提交
+        var scSw = t.closest ? t.closest('[data-scprop][data-type="bool"]') : null;
+        if (scSw) {
+          var sck = scSw.getAttribute('data-scprop');
+          var scon = !scSw.classList.contains('wdw-on');
+          setSceneProp(sck, scon);
+          commitSceneProps();
           return;
         }
         // 动态效果开关（P0-2.3）：data-fx 直接切换，不等 data-act 分支
@@ -1190,6 +1282,25 @@ function wallpaperPanel(payload) {
       var t = e.target;
       if (t.id === 'wdw-fontcolor') { setFont({ color: t.value }); paint(); return; }
       if (t.id === 'wdw-mask') { setMask(Number(t.value) / 100); return; }
+      // 场景属性：slider / color / combo（P0-2.3）—— change 时提交
+      var sc = t && t.getAttribute && t.getAttribute('data-scprop') ? t : (t && t.closest ? t.closest('[data-scprop]') : null);
+      if (sc && sc.getAttribute('data-type') !== 'bool') {
+        var k = sc.getAttribute('data-scprop');
+        var ty = sc.getAttribute('data-type');
+        if (ty === 'slider') { setSceneProp(k, Number(sc.value)); commitSceneProps(); return; }
+        if (ty === 'color') {
+          // #rrggbb → "r g b"（0-1 浮点，WE 官方格式）
+          var c = String(sc.value || '#808080').replace('#', '');
+          if (/^[0-9a-fA-F]{6}$/.test(c)) {
+            var rr = parseInt(c.slice(0, 2), 16) / 255, gg = parseInt(c.slice(2, 4), 16) / 255, bb = parseInt(c.slice(4, 6), 16) / 255;
+            setSceneProp(k, rr.toFixed(4) + ' ' + gg.toFixed(4) + ' ' + bb.toFixed(4));
+            commitSceneProps();
+          }
+          return;
+        }
+        if (ty === 'combo') { setSceneProp(k, Number(sc.value)); commitSceneProps(); return; }
+        return;
+      }
       if (t.id === 'wdw-up-file' && t.files && t.files[0]) {
         var file = t.files[0];
         // 发送前先卡大小：服务端虽有 10MB/80MB 上限，但那是**传完之后**才拒

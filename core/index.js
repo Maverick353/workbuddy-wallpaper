@@ -40,6 +40,8 @@ module.exports = {
   writeThemeBg: store.writeThemeBg,
   listWe: we.listWe,
   applyWe: we.applyWe,
+  readSceneProperties: we.readSceneProperties,
+  applySceneProperties: we.applySceneProperties,
   weScanVideos: we.weScanVideos,
   weFindVideoById: we.weFindVideoById,
   weWorkshopRoots: we.weWorkshopRoots,

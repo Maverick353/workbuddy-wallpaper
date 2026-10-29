@@ -122,12 +122,16 @@ function buildBackgroundExpr(theme, id, port, dir) {
   // 无配置时返回 null/falsy，页面侧保持单图现状，不影响既有三路。
   const frames = core.themeCss.resolveFrames({ theme: theme || { id }, id, themesDir: path.join(dir, 'themes') });
   const parallax = (theme && theme.parallax) || null;
+  // 场景属性（P0-2.3）：主题落盘的 weUserProperties（经 /api/we-properties 写回），
+  // 透传进注入表达式，页面侧经 __weSeedProps/applyProps 写进 WebWallGL 渲染器。
+  const sceneProps = (theme && theme.weUserProperties && typeof theme.weUserProperties === 'object') ? theme.weUserProperties : null;
   return bg.backgroundExpression({
     css: assets.bgCssStr,
     videoUrl: assets.bgVideoUrl,
     sceneUrl: assets.bgSceneUrl,
     frames: frames || null,
     parallax: parallax,
+    sceneProps: sceneProps,
   });
 }
 

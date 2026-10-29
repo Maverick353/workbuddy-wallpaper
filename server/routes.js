@@ -33,6 +33,8 @@ const ROUTES = [
   ['DELETE', '/api/custom-wallpapers'],
   ['GET', '/api/we-wallpapers'],
   ['POST', '/api/we-apply'],
+  ['GET', '/api/we-properties'],
+  ['POST', '/api/we-properties'],
   ['POST', '/api/theme-bg'],
   ['POST', '/api/inject'],
   ['POST', '/api/pause'],
@@ -60,7 +62,7 @@ function ctxWithDirs(ctx) {
 /** 是否本插件负责的 API 路径。 */
 function isApiPath(p) {
   if (p === '/api/wallpaper/health') return true;
-  if (p === '/api/wallpapers' || p === '/api/custom-wallpapers' || p === '/api/we-wallpapers' || p === '/api/we-apply' || p === '/api/theme-bg' || p === '/api/mask' || p === '/api/fonts') return true;
+  if (p === '/api/wallpapers' || p === '/api/custom-wallpapers' || p === '/api/we-wallpapers' || p === '/api/we-apply' || p === '/api/we-properties' || p === '/api/theme-bg' || p === '/api/mask' || p === '/api/fonts') return true;
   if (p === '/api/inject') return true;
   if (p === '/api/pause') return true;
   if (p === '/api/update' || p === '/api/update/check' || p === '/api/update/apply' || p === '/api/update/rollback') return true;
@@ -230,6 +232,14 @@ function createRoutes(ctx) {
     }
     if (m === 'POST' && p === '/api/we-apply') {
       return ctx.readBody(req).then((body) => we.applyWe(c, body || {})).then((r) => send(res, r));
+    }
+    if (m === 'GET' && p === '/api/we-properties') {
+      const weId = /[?&]weId=([^&]+)/.exec(String(req.url || ''));
+      const id = decodeURIComponent(weId ? weId[1] : '');
+      return send(res, { status: 200, body: { ok: true, properties: we.readSceneProperties(id) } });
+    }
+    if (m === 'POST' && p === '/api/we-properties') {
+      return ctx.readBody(req).then((body) => we.applySceneProperties(c, body || {})).then((r) => send(res, r));
     }
     if (m === 'POST' && p === '/api/theme-bg') {
       return ctx.readBody(req).then((body) => store.writeThemeBg(c, body || {})).then((r) => send(res, r));

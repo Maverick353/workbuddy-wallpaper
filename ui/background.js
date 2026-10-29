@@ -246,6 +246,25 @@ function wallpaperBackground(payload) {
         shost.insertBefore(sf, shost.firstChild);
       }
       if (sf.getAttribute('data-src-key') !== surl) { sf.setAttribute('data-src-key', surl); sf.src = surl; }
+      // 场景属性（P0-2.3）：把主题 weUserProperties 写进 WebWallGL 渲染器。
+      // 两种通道：同源直访 contentWindow.__weSeedProps（种子，首次即应用）；
+      // 跨源 sandbox 场景退化为 postMessage({__we:1,op:'applyProps'})。
+      // iframe 刚设 src 时 contentWindow 尚未就绪 → 挂 load 后补投，且每次换源都重投。
+      var sp = payload.sceneProps || null;
+      if (sp) {
+        var pushProps = function () {
+          try {
+            var cw = sf.contentWindow;
+            if (cw && cw.__weSeedProps) { cw.__weSeedProps(sp); return; }
+          } catch (_) { /* 跨源，走 postMessage */ }
+          try { sf.contentWindow.postMessage({ __we: 1, op: 'applyProps', props: sp }, '*'); } catch (_) {}
+        };
+        if (sf.getAttribute('data-props-key') !== JSON.stringify(sp)) {
+          sf.setAttribute('data-props-key', JSON.stringify(sp));
+          sf.addEventListener('load', function onLd() { sf.removeEventListener('load', onLd); pushProps(); });
+          if (sf.contentWindow) { try { pushProps(); } catch (_) {} }
+        }
+      }
     }
 
     // ④ 增强层：昼夜循环（多帧跨淡化）——覆盖在图片背景之上，视频/场景之上同样可用

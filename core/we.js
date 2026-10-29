@@ -202,6 +202,88 @@ async function applyWe(ctx, body) {
   }
 }
 
+/**
+ * 读取场景可调属性（P0-2.3 场景属性可视化调节）：解析工坊目录 project.json 的 general.properties。
+ * 返回规范化属性表 [{ key, text, type: bool|slider|color|combo, value, min, max, options }]，
+ * 供面板动态生成控件。只读，不改动源文件；无属性 / 非场景 → 返回空表。
+ *
+ * WE 属性契约（Wallpaper Engine 官方 general.properties）：
+ *   bool   → value 为 boolean
+ *   slider → value 为 number，min/max 定范围（可缺省，缺省按 value±1 兜底）
+ *   color  → value 为 "r g b" 空格分隔的 0-1 浮点串（官方 UI 用）
+ *   combo  → options 为字符串数组，value 为序号（0-based）
+ * 缺省 value 的 slider 是合法形态（如 text 含"时间"类），兜底给 min=0/max=1/value=0.5。
+ */
+function readSceneProperties(weId) {
+  const want = String(weId).replace(/[^0-9]/g, '');
+  if (!want) return [];
+  const found = weFindVideoById(want);
+  if (!found || found.type !== 'scene' || !found.dir) return [];
+  let pj = null;
+  try { pj = JSON.parse(fs.readFileSync(path.join(found.dir, 'project.json'), 'utf8')); } catch (_) { return []; }
+  const src = pj && pj.general && pj.general.properties;
+  if (!src || typeof src !== 'object') return [];
+  const out = [];
+  for (const key of Object.keys(src)) {
+    const p = src[key];
+    if (!p || typeof p !== 'object') continue;
+    const type = String(p.type || '').toLowerCase();
+    const item = {
+      key,
+      text: (typeof p.text === 'string' && p.text) ? p.text : key,
+      type: ['bool', 'slider', 'color', 'combo'].indexOf(type) >= 0 ? type : (typeof p.value === 'boolean' ? 'bool' : typeof p.value === 'number' ? 'slider' : 'text'),
+      value: p.value,
+      order: Number.isFinite(Number(p.order)) ? Number(p.order) : Number(p.index) || 0,
+    };
+    if (item.type === 'slider') {
+      const v = Number.isFinite(Number(p.value)) ? Number(p.value) : 0.5;
+      item.min = Number.isFinite(Number(p.min)) ? Number(p.min) : Math.min(v, v - 1);
+      item.max = Number.isFinite(Number(p.max)) ? Number(p.max) : Math.max(v, v + 1);
+      item.value = Math.min(item.max, Math.max(item.min, v));
+    } else if (item.type === 'combo') {
+      item.options = Array.isArray(p.options) ? p.options.map(String) : [];
+    } else if (item.type === 'color') {
+      // 保持官方 "r g b" 串形态，页面侧解析；缺省给灰色
+      if (typeof p.value !== 'string' || !/^[\d. ]+$/.test(String(p.value).trim())) item.value = '0.5 0.5 0.5';
+    }
+    out.push(item);
+  }
+  out.sort((a, b) => a.order - b.order);
+  return out;
+}
+
+/**
+ * 应用场景属性（P0-2.3）：把面板改动落盘到主题 theme.json 的 weUserProperties，
+ * 并透传给当前注入表达式（页面侧经 wallpaperPropertyListener.applyUserProperties 写回）。
+ * 纯落盘 + 委托 ctx.applyTheme 重注入；真正渲染在页面侧。
+ */
+async function applySceneProperties(ctx, body) {
+  try {
+    const id = String(body.id || '').replace(/[^A-Za-z0-9_-]/g, '_');
+    if (!id) return { status: 400, body: { ok: false, error: '缺少 id' } };
+    const props = body.properties;
+    if (props === undefined || typeof props !== 'object') return { status: 400, body: { ok: false, error: '缺少 properties' } };
+    // 白名单收敛：只接受 { key: value } 标量，杜绝注入任意结构
+    const clean = {};
+    for (const k of Object.keys(props)) {
+      const v = props[k];
+      if (typeof v === 'boolean' || typeof v === 'number' || typeof v === 'string') clean[k] = v;
+    }
+    store.patchThemeJson(ctx, id, { weUserProperties: clean });
+    if (!ctx.applyTheme) {
+      return { status: 200, body: { ok: true, applied: false, pending: true, id, properties: clean, warn: '已保存，连接恢复后自动应用' } };
+    }
+    try {
+      const info = await ctx.applyTheme(id);
+      return { status: 200, body: { ok: true, applied: !!(info && info.ok), id, properties: clean } };
+    } catch (_) {
+      return { status: 200, body: { ok: true, applied: false, pending: true, id, properties: clean, warn: '已保存，连接恢复后自动应用' } };
+    }
+  } catch (e) {
+    return { status: 500, body: { ok: false, error: e.message } };
+  }
+}
+
 /** 供 /api/we-wallpapers 输出的精简列表。 */
 function listWe(force, dataDir) {
   try {
@@ -219,4 +301,4 @@ function listWe(force, dataDir) {
   }
 }
 
-module.exports = { WE_APPID, weSteamBaseCandidates, weWorkshopRoots, readWorkshopItem, weScanVideos, weFindVideoById, listWe, applyWe };
+module.exports = { WE_APPID, weSteamBaseCandidates, weWorkshopRoots, readWorkshopItem, weScanVideos, weFindVideoById, listWe, applyWe, readSceneProperties, applySceneProperties };

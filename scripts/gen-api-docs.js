@@ -30,6 +30,8 @@ const CATALOG = {
   'DELETE /api/custom-wallpapers': { desc: '删除指定自定义壁纸', auth: '否', params: 'query：name', ret: 'ok' },
   'GET /api/we-wallpapers': { desc: '列出 Wallpaper Engine 库（含缓存）', auth: '否', params: 'query：refresh=1 可强刷', ret: 'items[]：id/title/type/size' },
   'POST /api/we-apply': { desc: '应用某个 WE 壁纸（场景/视频）', auth: '否', params: 'body：id / options', ret: 'ok / applied' },
+  'GET /api/we-properties': { desc: '读取场景可调属性（project.json 的 general.properties，供面板生成控件）', auth: '否', params: 'query：weId', ret: 'properties[]：key/text/type/value/min/max/options' },
+  'POST /api/we-properties': { desc: '应用场景属性（落盘 weUserProperties 并重注入）', auth: '否', params: 'body：id / properties{key:value}', ret: 'ok / applied / properties' },
   'POST /api/theme-bg': { desc: '设置主题背景（图片/视频/场景三选一）', auth: '否', params: 'body：type / id / opacity', ret: 'ok / applied' },
   'POST /api/inject': { desc: '手动重新注入页面 UI（注入丢失时的自救入口；需注入器在运行）', auth: '是', params: '—（无请求体）', ret: 'ok / injection{ok,at,attempts,lastError}' },
   'POST /api/pause': { desc: '暂停/恢复壁纸（可逆：只拆/铺背景层，服务与看门狗照跑；与 /api/shutdown 的 .stopped 无关）', auth: '是', params: 'body：paused=true|false', ret: 'ok / paused / applied（false 表示无注入通道，状态已存但页面不变）' },
