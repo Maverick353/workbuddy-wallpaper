@@ -920,11 +920,19 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       'evolve 预检：越界目标在 dryRun 之前就被拒（不会出现"先备份再失败"）');
   }
 
-  // ── 页面型内容的可读面（2026-10-28「资料库像图片裂了」事故的回归钉）──
+  // ── 页面型内容的可读面（2026-10-28「资料库像图片裂了」+ 2026-10-29「资料库一大块死黑」双重回归钉）──
   {
     const themeSrc = readT('core/theme-css.js');
-    ok(themeSrc.includes('wb-home-page-pc') && themeSrc.includes('rgba(13,15,20,.97)'),
-      '可读面钉子：资料库/知识库页必须有实底（.97）—— 6% 白盖不住亮壁纸，壁纸图案会从卡片中间穿出来');
+    ok(themeSrc.includes('wb-home-page-pc') && themeSrc.includes('rgba(13,15,20,.62)'),
+      '适配钉子：资料库页壳必须半透明（.62）—— .97 等于整页死黑，壁纸在该页完全看不到（用户实测反馈）');
+    ok(!/wb-home-page-pc[^\n]*rgba\(13,15,20,\.9/.test(themeSrc),
+      '适配钉子：页壳不许回到 .9 以上（会把资料库变成一块黑底板）');
+    ok(themeSrc.includes('knowledge-sidebar-pc') && themeSrc.includes('rgba(13,15,20,.72)'),
+      '适配钉子：知识库左栏要比内容区略实（.72），保证栏内文字在壁纸亮部也可读');
+    ok(themeSrc.includes('my-files-panel') && themeSrc.includes('atm-task-card'),
+      '适配钉子：my-files-panel / atm-task-card 也在"原生实心黑"名单里，必须一并半透明化');
+    ok(themeSrc.includes('wbs-status-popover') && themeSrc.includes('wbs-modal') && themeSrc.includes('wb-popover'),
+      '适配钉子：wbs-* 弹层（状态/积分/提示气泡）与 wb-popover 都是宿主 rgb(36,36,36) 实心黑，必须半透明化');
     ok(!/'\[class\*="wb-home-guide-card"\]' \+ X/.test(themeSrc),
       '可读面钉子：卡片底色只能用 -card-pc，宽匹配会把 -title-pc/-desc-pc 一起上色（文字底下出现浅色方块）');
     ok(!/wb-home-page-pc[^\n]*backdrop-filter/.test(themeSrc),

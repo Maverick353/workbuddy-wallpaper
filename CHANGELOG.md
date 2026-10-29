@@ -25,6 +25,12 @@
 - 面板 `top:34px`，不再盖住宿主窗口的最小化/最大化/关闭按钮；头部新增 ✕ 关闭。
 - `上传`/`扫描`/`关闭壁纸` 不再被压成竖排两行；星标与色块点击目标 18→22px。
 - 键盘 `:focus-visible` 可见焦点环；库计数随筛选变化；"当前壁纸"与"使用中"标记能正确显示。
+- **资料库页改为分层透壁纸**（2026-10-29）：页壳 `.97 → .62`、左栏 `.97 → .72`、表格外壳改深底 `.45`、
+  卡片白 `.07 → .10`。上一轮为修"卡片透出壁纸图案"把整页做成近实心黑，导致该页完全看不到壁纸。
+- **8 类宿主实心黑弹层半透明化**（2026-10-29 逐按钮扫描）：`wb-popover`(36,36,36)、
+  `workspace-tree-create-space-dialog-pc`、`workspace-tree-modal-overlay-pc`(.8→.55)、
+  `wbs-modal` / `wbs-modal-mask` / `wbs-status-popover` / `wbs-credit-summary-popover` /
+  `wbs-telemetry-tooltip`、`my-files-panel`、`atm-task-card`。
 - **报告卡片半透明化**（2026-10-29）：定时任务报告页 `automation-run-group__item` 自带不透明底
   `rgb(10,10,10)`/`rgb(22,22,25)`，848×400 两块把壁纸盖死；改 `rgba(13,15,20,.62)` 玻璃底 +
   细边框，壁纸透出、文字可读（双 token 选择器只命中卡片根）。
