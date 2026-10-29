@@ -145,6 +145,12 @@ function resolveBackgroundAssets(p) {
           P + '[class*="wb-home-guide-card-pc"]' + X + '{background:rgba(255,255,255,.07) !important}',
           P + '[class*="wb-home-guide-card-list"]' + X + ',' + P + '[class*="wb-home-guide-header"]' + X + '{background:transparent !important}',
           P + '[class*="wb-feed-content-shell"]' + X + '{background:rgba(255,255,255,.05) !important;border-radius:12px}',
+          // 2026-10-29「报告卡片背后一片死黑」事故：定时任务报告页的 automation-run-group__item
+          // 自带**不透明**底（实测 rgb(10,10,10) 与 rgb(22,22,25)，848×400 两块，把壁纸盖死；
+          // 我们的选择器在该页 0 命中，纯宿主原生样式）。改半透明玻璃底：壁纸透出、文字仍可读。
+          // 取值 .62：壁纸是深色星空场景时正文对比足够；同样不加 backdrop-filter（GPU 代价，见上）。
+          // 双 token 连写匹配（"__item __item--"）只命中卡片根，不会误染标题等内部元素。
+          P + '[class*="automation-run-group__item automation-run-group__item--"]' + X + '{background:rgba(13,15,20,.62) !important;border:1px solid rgba(255,255,255,.10) !important}',
           // 2026-10-14 二轮：左侧任务栏里成片发黑的小块 —— 同样是 5.8.2 新增的不透明底 rgb(31,31,31)：
           //   小节标签 .conversation-section-label（任务/分组）、小节头 [class*="_headerTopPadding_"]、
           //   消息队列 .conversation-message-queue、短标签 [class*="_capsule_"]、

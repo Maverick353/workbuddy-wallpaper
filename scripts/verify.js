@@ -929,6 +929,20 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '可读面钉子：卡片底色只能用 -card-pc，宽匹配会把 -title-pc/-desc-pc 一起上色（文字底下出现浅色方块）');
     ok(!/wb-home-page-pc[^\n]*backdrop-filter/.test(themeSrc),
       '可读面钉子：大面板不许加 backdrop-filter —— 实测 18px 模糊让 GPU 进程从 425% 涨到 629%（≈2 核）');
+    // ── 2026-10-29「报告卡片背后一片死黑」回归钉 ──
+    ok(themeSrc.includes('automation-run-group__item automation-run-group__item--') && themeSrc.includes('rgba(13,15,20,.62)'),
+      '报告卡片钉子：定时任务报告页 automation-run-group__item 必须半透明化（宿主原生 rgb(10,10,10) 不透明底会把壁纸盖死）');
+    ok(!/automation-run-group__item[^\n]*backdrop-filter/.test(themeSrc),
+      '报告卡片钉子：automation 卡片同样不许加 backdrop-filter（GPU 代价）');
+  }
+
+  // ── 面板层级（2026-10-29「面板在特定场景错位」回归钉）──
+  {
+    const panelSrc = readT('ui/dsh-ui/panel.js');
+    ok(/z-index:1500/.test(panelSrc),
+      '面板层级钉子：面板 z 必须 > 宿主右缘历史导航栏(1100)，否则导航栏按钮从面板上穿透像错位');
+    ok(!/z-index:997/.test(panelSrc),
+      '面板层级钉子：旧值 997 不许回来（< 1100 必穿透）');
   }
 
   // ── 注入可观测性（2026-10-28「开机 45 分钟注入全丢、health 仍 ok」的回归钉）──

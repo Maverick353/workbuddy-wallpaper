@@ -147,7 +147,10 @@ function wallpaperPanel(payload) {
     var css = [
       // 面板容器：悬浮岛式右滑抽屉（与侧栏悬浮岛同一视觉语言，2026-10-13 二次迭代）：
       // 四周留白 12px 脱离边缘 + 全圆角 22px + 玻璃底 + 顶部光泽 + 细边框 + 多层悬浮阴影
-      '#' + ID.root + '{position:fixed;top:34px;right:12px;height:calc(100vh - 46px);width:344px;z-index:997;display:flex;flex-direction:column;box-sizing:border-box;',
+      // z=1500：必须压过宿主右缘「会话历史导航」(conversation-history-navigation, z=1100)，
+      // 否则面板打开时导航栏按钮从面板上穿透，看着像面板错位（2026-10-29 实测）。
+      // 不要去追 wbs-fab/wbs-root 的 2147483647（WorkDaddy 悬浮球），追不上也不必追。
+      '#' + ID.root + '{position:fixed;top:34px;right:12px;height:calc(100vh - 46px);width:344px;z-index:1500;display:flex;flex-direction:column;box-sizing:border-box;',
       '--wdw-ui-h:30px;--wdw-ui-radius:10px;--wdw-ease:cubic-bezier(0.16,1,0.3,1);--wdw-dur-fast:120ms;',
       '--wdw-ink:var(--wb-color-text-primary,#e8ecf4);--wdw-ink-2:var(--wb-color-text-secondary,rgba(232,236,244,.72));--wdw-ink-3:rgba(232,236,244,.5);',
       '--wdw-accent:var(--wb-accent,#4f8cff);',
