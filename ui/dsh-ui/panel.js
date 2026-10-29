@@ -373,7 +373,7 @@ function wallpaperPanel(payload) {
       // z=1500：必须压过宿主右缘「会话历史导航」(conversation-history-navigation, z=1100)，
       // 否则面板打开时导航栏按钮从面板上穿透，看着像面板错位（2026-10-29 实测）。
       // 不要去追 wbs-fab/wbs-root 的 2147483647（WorkDaddy 悬浮球），追不上也不必追。
-      '#' + ID.root + '{position:fixed;top:34px;right:12px;height:calc(100vh - 46px);width:344px;z-index:1500;box-sizing:border-box;display:grid;grid-template-columns:76px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;',
+      '#' + ID.root + '{position:fixed;top:34px;right:12px;height:calc(100vh - 46px);width:344px;z-index:1500;display:flex;flex-direction:column;box-sizing:border-box;',
       '--wdw-ui-h:30px;--wdw-ui-radius:10px;--wdw-ease:cubic-bezier(0.16,1,0.3,1);--wdw-dur-fast:120ms;',
       '--wdw-ink:var(--wb-color-text-primary,#e8ecf4);--wdw-ink-2:var(--wb-color-text-secondary,rgba(232,236,244,.72));--wdw-ink-3:rgba(232,236,244,.5);',
       '--wdw-accent:var(--wb-accent,#4f8cff);',
@@ -394,22 +394,18 @@ function wallpaperPanel(payload) {
       '#' + ID.root + '.wdw-open{transform:none}',
       '#' + ID.root + ' *{box-sizing:border-box}',
       // 头部
-      '#' + ID.root + ' .p-head{grid-column:1/3;grid-row:1;display:flex;align-items:center;gap:8px;justify-content:space-between;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.10)}',
+      '#' + ID.root + ' .p-head{display:flex;align-items:center;gap:8px;justify-content:space-between;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.10);flex:0 0 auto}',
       // 面板关闭按钮（此前只能再点吉祥物或按 Esc；右上角又正好压着宿主窗口的关闭按钮，极易误关整个应用）
       '#' + ID.root + ' .p-x{margin-left:auto;width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--wdw-ink-3);cursor:pointer;font-size:12px;line-height:1;padding:0;transition:background var(--wdw-dur-fast),color var(--wdw-dur-fast)}',
       '#' + ID.root + ' .p-x:hover{background:var(--wdw-glass-fill-hi);color:var(--wdw-ink)}',
       '#' + ID.root + ' .p-title{font-size:13px;font-weight:600;flex:1}',
       // ── 页签栏（分段式玻璃轨道 + 滑动指示胶囊）──
-      // 左侧竖排导航（2026-10-29 对齐参考图：左轨 + 顶栏 + 内容 + 底栏；DOM 不变，仅布局）
-      '#' + ID.root + ' .p-tabs{grid-column:1;grid-row:2;position:relative;display:flex;flex-direction:column;gap:4px;align-self:start;padding:6px;border-radius:14px;margin:8px 0 8px 8px;',
-      'background:color-mix(in srgb,var(--wb-bg-popover,#1a1e26) 42%,transparent);border:1px solid rgba(255,255,255,.10);overflow:hidden}',
-      '#' + ID.root + ' .p-tabs__pill{position:absolute;left:6px;right:6px;top:6px;height:46px;border-radius:11px;',
+      '#' + ID.root + ' .p-tabs{position:relative;display:flex;flex:0 0 auto;padding:3px;border-radius:12px;margin:26px 12px 6px;',
+      'background:color-mix(in srgb,var(--wb-bg-popover,#1a1e26) 45%,transparent);border:1px solid rgba(255,255,255,.10);overflow:hidden}',
+      '#' + ID.root + ' .p-tabs__pill{position:absolute;top:3px;left:3px;bottom:3px;border-radius:9px;',
       'background:color-mix(in srgb,var(--wb-bg-popover,#2a3040) 65%,transparent);box-shadow:0 2px 8px rgba(0,0,0,.30),inset 0 1px 0 rgba(255,255,255,.16);',
       'transition:transform 220ms var(--wdw-ease);will-change:transform}',
-      '#' + ID.root + ' .p-tab{position:relative;z-index:1;flex:0 0 auto;min-width:0;height:46px;padding:0 2px;border:0;background:transparent;border-radius:11px;cursor:pointer;white-space:normal;font-size:11.5px;line-height:1.25;color:var(--wdw-ink-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transition:color var(--wdw-dur-fast) var(--wdw-ease)}',
-      // 左轨图标位：参考图为「图标在上、两字标签在下」；图标用字符，不引图标库
-      '#' + ID.root + ' .p-tab::before{content:attr(data-ic);font-size:13px;line-height:1;opacity:.7}',
-      '#' + ID.root + ' .p-tab.wdw-on::before{opacity:1}',
+      '#' + ID.root + ' .p-tab{position:relative;z-index:1;flex:1 1 0;min-width:0;height:28px;padding:0 4px;border:0;background:transparent;border-radius:8px;cursor:pointer;white-space:nowrap;font-size:12px;line-height:1;color:var(--wdw-ink-2);transition:color var(--wdw-dur-fast) var(--wdw-ease)}',
       '#' + ID.root + ' .p-tab:hover{color:var(--wdw-ink)}',
       '#' + ID.root + ' .p-tab.wdw-on{color:var(--wdw-ink);font-weight:600}',
       // ── 页签小红点（「关于」页有新版本时）──
@@ -426,7 +422,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-upd-acts{display:flex;gap:6px;flex-wrap:wrap}',
       '#' + ID.root + ' .p-busy{opacity:.65;pointer-events:none}',
       // 内容区：fade + 上移落定
-      '#' + ID.root + ' .p-body{grid-column:2;grid-row:2;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:10px 12px 14px}',
+      '#' + ID.root + ' .p-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:6px 12px 14px}',
       '#' + ID.root + ' .p-pane{display:flex;flex-direction:column;gap:12px;animation:wdw-tab-in 180ms var(--wdw-ease)}',
       '@keyframes wdw-tab-in{from{opacity:0;transform:translateY(4px)}}',
       '@media (prefers-reduced-motion:reduce){#' + ID.root + ',#' + ID.root + ' .p-tabs__pill,#' + ID.root + ' .p-pane{transition:none;animation:none}}',
@@ -522,7 +518,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-offline{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,128,128,.42);background:rgba(255,128,128,.10);color:#ffb3b3;font-size:11px;line-height:1.5}',
       '#' + ID.root + ' .p-offline .p-btn{height:22px;padding:0 8px;font-size:11px;flex:0 0 auto}',
       // 底部
-      '#' + ID.root + ' .p-foot{grid-column:1/3;grid-row:3;padding:9px 14px;border-top:1px solid rgba(255,255,255,.10);font-size:11px;color:var(--wdw-ink-3);display:flex;gap:8px;align-items:center}',
+      '#' + ID.root + ' .p-foot{flex:0 0 auto;padding:9px 14px;border-top:1px solid rgba(255,255,255,.10);font-size:11px;color:var(--wdw-ink-3);display:flex;gap:8px;align-items:center}',
       // 键盘可达：注入层默认没有焦点环（宿主 CSS 会吃掉），键盘用户看不到当前焦点
       '#' + ID.root + ' button:focus-visible,#' + ID.root + ' input:focus-visible,#' + ID.root + ' [tabindex]:focus-visible{outline:2px solid color-mix(in srgb,var(--wdw-accent) 80%,transparent);outline-offset:2px}',
     ].join('\n') + '\n' + skinCss() + '\n' + pageSkinCss();
@@ -1044,8 +1040,7 @@ function wallpaperPanel(payload) {
         '<div class="p-tabs" role="tablist"><span class="p-tabs__pill"></span>',
         TABS.map(function (t) {
           var dot = (t.id === 'about' && st.upd && st.upd.hasUpdate) ? '<i class="p-dot"></i>' : '';
-          var ic = { library: '▤', font: 'A', system: '⚙', extensions: '⌗', about: 'i' }[t.id] || '•';
-          return '<button class="p-tab" type="button" role="tab" aria-selected="false" data-tab="' + t.id + '" data-ic="' + ic + '" title="' + t.label + '">' + t.label + dot + '</button>';
+          return '<button class="p-tab" type="button" role="tab" data-tab="' + t.id + '">' + t.label + dot + '</button>';
         }).join(''),
         '</div>',
         '<div class="p-body" id="wdw-panel-body"></div>',
@@ -1063,10 +1058,10 @@ function wallpaperPanel(payload) {
     for (var i = 0; i < tabs.length; i++) if (tabs[i].getAttribute('data-tab') === st.tab) idx = i;
     var pill = el.querySelector('.p-tabs__pill');
     if (!pill || !tabs.length) return;
-    // 竖排轨：胶囊按「页签高度 + gap(4)」固定，width 由 left/right 撑满
-    var h = tabs[0].getBoundingClientRect().height || tabs[0].offsetHeight || 46;
-    pill.style.height = h + 'px';
-    pill.style.transform = 'translateY(' + (idx * (h + 4)) + 'px)';
+    var w = tabs[0].getBoundingClientRect().width || (tabs[0].offsetWidth);
+    if (!w) { pill.style.width = 'calc(' + (100 / tabs.length) + '% - 6px)'; pill.style.transform = 'translateX(' + (idx * 100) + '%)'; return; }
+    pill.style.width = w + 'px';
+    pill.style.transform = 'translateX(' + (idx * (w + 0)) + 'px)';
   }
 
   /** 只重绘仓库网格（切标签 / 搜索时用：整页重绘会让输入框失焦）。 */

@@ -668,9 +668,8 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
     '适配钉：面板头部要有 ✕ 关闭按钮且动作已分发（此前只能再点吉祥物或按 Esc）');
   ok(panelSrc.includes('.p-row>.p-hint.p-tag{flex:0 0 auto;white-space:nowrap}'),
     '适配钉：短状态标签走 .p-tag nowrap；长说明不得一刀切 nowrap（会把按钮顶出面板，实测 +54px 横向滚动）');
-  ok(panelSrc.includes('.p-body{grid-column:2;grid-row:2;min-height:0;overflow-y:auto')
-    || panelSrc.includes('.p-body{flex:1 1 auto;min-height:0;overflow-y:auto'),
-    '适配钉：面板主体是唯一滚动容器（min-height:0 不能删，否则子项撑破面板）；2026-10-29 起为 grid 版');
+  ok(panelSrc.includes('.p-body{flex:1 1 auto;min-height:0;overflow-y:auto'),
+    '适配钉：面板主体是唯一滚动容器（min-height:0 不能删，否则 flex 子项撑破面板）');
   ok(panelSrc.includes('filter(passFilter).length'),
     '适配钉：库计数按筛选后计数（曾恒等于总数 ⇒ 场景14/视频1/图片0 都显示「15 项」）');
   ok(readT('core/store.js').includes('currentTitle') && readT('core/store.js').includes('weId:'),
