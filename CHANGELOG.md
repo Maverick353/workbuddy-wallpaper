@@ -34,6 +34,10 @@
 - **主题配方**：新增 `node scripts/recipe.js export <id>` / `import <file>`，导出「提示词 +
   参数 + 动画设置 + 素材哈希」的可复现配方 JSON（不内联像素，体积 KB 级）；导入落成新主题，
   本地已有同哈希素材自动复用。
+- **场景属性可视化调节**（2026-10-29）：Wallpaper Engine 场景若在 `project.json` 里声明
+  `general.properties`，面板「系统」页自动生成对应控件（bool 开关 / slider 滑块 / color 色块 /
+  combo 下拉），改动即时提交（`POST /api/we-properties`）落盘 `weUserProperties` 并重注入，
+  经 `__weSeedProps` / `applyProps` 写回 WebWallGL 渲染器。属性类型白名单，未知类型降级只读。
 
 **适配**
 - 面板 `top:34px`，不再盖住宿主窗口的最小化/最大化/关闭按钮；头部新增 ✕ 关闭。
@@ -46,7 +50,7 @@
   导航栏按钮从面板上穿透、看着像错位"。纯样式改动，未 bump `WIRE_VER`。
 
 **质量**
-- `verify.js` 185 → **270**；适配矩阵 11 个入口 × 7 组视口/DPI 全绿。
+- `verify.js` 185 → **276**；适配矩阵 11 个入口 × 7 组视口/DPI 全绿。
 
 ## 1.2.3
 

@@ -1,6 +1,6 @@
 {
   "name": "workbuddy-wallpaper",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "壁纸引擎与注入式 UI 技能 —— 零依赖本地服务 + 玻璃拟态界面，把壁纸画进 WorkBuddy 窗口",
   "keywords": [
     "wallpaper",

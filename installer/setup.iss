@@ -22,7 +22,7 @@
 ; ============================================================================
 
 #define MyAppName "workbuddy-wallpaper"
-#define MyAppVersion "1.2.3"
+#define MyAppVersion "1.2.4"
 #define MyAppPublisher "Maverick353"
 #define MyAppURL "https://github.com/Maverick353/workbuddy-wallpaper"
 #define MyAppExeName "启动.cmd"
