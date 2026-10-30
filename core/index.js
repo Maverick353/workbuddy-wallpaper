@@ -16,7 +16,7 @@ const update = require('./update.js');
 const pause = require('./pause.js');
 
 const PLUGIN_ID = 'workdaddy.wallpaper';
-const PLUGIN_VERSION = '1.2.4';
+const PLUGIN_VERSION = '1.2.5';
 
 module.exports = {
   PLUGIN_ID,

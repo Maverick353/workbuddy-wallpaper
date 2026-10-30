@@ -68,7 +68,7 @@
 ### 方式一：`.exe` 安装包（最省事，推荐给不写代码的人）
 
 到 [**Releases**](https://github.com/Maverick353/workbuddy-wallpaper/releases/latest) 下载
-**`workbuddy-wallpaper-setup-1.2.4.exe`** → 双击 → 下一步 → 完成。
+**`workbuddy-wallpaper-setup-1.2.5.exe`** → 双击 → 下一步 → 完成。
 
 装完会自动跑一次配置：找 Node → 装成技能 → 注册开机自启 → **并在后台把服务拉起来（隐藏窗口，不用等下次登录）** → **检查调试端口** →
 没有就提出「帮你改快捷方式」。无需管理员权限（装进 `%LOCALAPPDATA%\Programs\`）。
