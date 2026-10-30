@@ -1,20 +1,20 @@
 {
   "schema": 1,
   "channel": "stable",
-  "latest": "1.2.4",
+  "latest": "1.2.5",
   "minSupported": "1.2.1",
-  "releasedAt": "2026-10-29T11:03:31.965Z",
+  "releasedAt": "2026-10-30T17:09:01.156Z",
   "url": "https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/?sharecode=SK54F4ACNS",
-  "notes": "1.2.4：动态效果（昼夜循环/鼠标视差/场景属性调节）+ 主题配方 + 出口可逆（暂停≠退出）+ 注入可观测 + 报告卡片半透明化。1.2.0 及以下请用安装包重装。",
+  "notes": "1.2.5：可读性下限+玻璃浓度、外观预设+手动强调色、动效分类，以及空闲降帧、自动轮播、最近使用、加载淡入、视频倍速静音、应用撤销等性能体验优化。1.2.0 及以下请用安装包重装。",
   "assets": {
     "zip": {
-      "url": "https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/workbuddy-wallpaper-1.2.4.bin?sharecode=SK54F4ACNS",
+      "url": "https://c2a975f3971d42169d9e1c859081cc47.app.workbuddy.host/workbuddy-wallpaper-1.2.5.bin?sharecode=SK54F4ACNS",
       "mirrors": [
-        "https://github.com/Maverick353/workbuddy-wallpaper/releases/download/v1.2.4/workbuddy-wallpaper.zip"
+        "https://github.com/Maverick353/workbuddy-wallpaper/releases/download/v1.2.5/workbuddy-wallpaper.zip"
       ],
-      "size": 2951220,
-      "sha256": "cd5cfc20129ceea23758b14899514a913cf503d8016c77fcbf7f34997226c76b",
-      "signature": "RAlBJIfMJ1l3X1KEqEb3FEy3SRBOv4/XgaCmy/TQUT+MgdyWzuYTalZA2X2OPmEYaw3F29EjnEZaj3qUFb66CA==",
+      "size": 2961764,
+      "sha256": "18119dff60040c9b7ad08db5478e9fcca59533211ee21da1176c5899951fadeb",
+      "signature": "M0JJ3z8a6V0kgpBeyqG/F/wM4d/PnDIXX6BE6xsmzmWsk4WrVHCkBFvZ2kN7l6WHjoizt7Dflw14X9UK1tcfBQ==",
       "keyId": "wbwp-2026a"
     }
   }
