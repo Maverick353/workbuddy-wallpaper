@@ -129,17 +129,23 @@ function resolveBackgroundAssets(p) {
           //   实测根因：卡片自带底色只有 rgba(255,255,255,.06)，表格外壳 wb-feed-content-shell 全透明，
           //   而 wb-home-page-pc(1364) ⊃ body(1024) ⊃ dock(928) ⊃ card 四层都没有实底 ⇒ 壁纸直接穿透。
           //   那块"窗户"是**壁纸图案**，不是图片没加载：摘掉壁纸层后白块即消失（已用像素差验证）。
-          //   修法：**只给最外层 wb-home-page-pc 一层底板**，内层显式 transparent（否则 .97 × 三层 ≈ 全黑），
-          //   卡片再抬 .07 白做层级；左侧知识库栏同款底板。
-          //   不透明度历史：.74（壁纸影响 69 级）→ .92（32 级）→ .97（<10 级，文字最清晰）。
-          //   2026-10-31 用户要求「资料库要透出壁纸、要玻璃感」→ 先 .70，实测亮部壁纸下左侧栏
-          //   文字叠在星云上发虚（糊掉），改 .85：压得住亮星云、文字可读，又比 .97 通透、壁纸氛围还在。
+          //   修法历史（2026-10-31 收敛）：
+          //   ① 10-28：给 wb-home-page-pc 一层 .97 实底（解决「壁纸穿透导致卡片文字看不清」）。
+          //   ② 10-31：用户要求「透出壁纸」→ .70，实测亮部壁纸下左侧栏文字糊掉 → .85。
+          //   ③ 10-31：用户发目标图，明确要「三栏全透明、文字直接浮在壁纸上、无遮罩」→ 改 transparent，
+          //      **代价**：无遮罩后文字可读性全靠文字自身，故给资料库三栏文字统一加 text-shadow
+          //      （柔和深色阴影，叠在壁纸亮部也能读）。这是「全透明沉浸感」与「可读性」的折中：
+          //      不做 backdrop-filter（GPU 红线），靠文字阴影兜底。
+          //   ⚠️ 若某张壁纸亮部极多、文字仍难读，优先调 text-shadow 强度，而不是加回遮罩。
           //   ⚠️ 仍不加 backdrop-filter（GPU 红线，大面板 18px blur 让 GPU 425%→629%）。
-          //   ⚠️ 也试过 .82 + backdrop-filter:blur(18px)：观感最好，但 GPU 进程从 425% 飙到 629%
-          //     （≈多烧 2 核，场景壁纸本身已在动画），代价不划算，撤掉。
-          P + '[class*="wb-home-page-pc"]' + X + '{background:rgba(13,15,20,.85) !important;border-radius:16px}',
+          P + '[class*="wb-home-page-pc"]' + X + '{background:transparent !important;border-radius:16px}',
           P + '[class*="wb-home-page-body"]' + X + ',' + P + '[class*="wb-home-guide-dock"]' + X + '{background:transparent !important}',
-          P + '[class*="knowledge-sidebar-pc"]' + X + '{background:rgba(13,15,20,.85) !important;border-radius:16px}',
+          P + '[class*="knowledge-sidebar-pc"]' + X + '{background:transparent !important;border-radius:16px}',
+          // 2026-10-31 全透明化（用户要求「三栏全透、文字浮在壁纸上」）：容器改 transparent 后，
+          //   文字可读性全靠文字自身对比。给资料库三栏内的文字统一加柔和阴影（深色描边感），
+          //   让白色文字即使叠在壁纸亮部（星云/发光字母）也能读。阴影取「柔和 + 大半径」，
+          //   不追求硬描边（否则文字发僵）。
+          P + '[class*="wb-home-page-pc"]' + X + ',' + P + '[class*="knowledge-sidebar-pc"]' + X + '{text-shadow:0 1px 2px rgba(0,0,0,.6),0 0 8px rgba(0,0,0,.4) !important}',
           // 只给卡片本体（-card-pc），别用 [class*="wb-home-guide-card"] —— 那会连 -title-pc / -desc-pc
           // 一起上色，文字底下出现一块块浅色方块（实测踩过）。
           P + '[class*="wb-home-guide-card-pc"]' + X + '{background:rgba(255,255,255,.07) !important}',

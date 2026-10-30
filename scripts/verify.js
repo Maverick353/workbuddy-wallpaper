@@ -986,10 +986,12 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   // ── 页面型内容的可读面（2026-10-28「资料库像图片裂了」事故的回归钉）──
   {
     const themeSrc = readT('core/theme-css.js');
-    ok(themeSrc.includes('wb-home-page-pc') && themeSrc.includes('rgba(13,15,20,.85)'),
-      '可读面钉子：资料库/知识库页用 .85 半透明底（2026-10-31：.70 太透、亮星云下文字发虚，.85 压得住亮部又保壁纸氛围）');
-    ok(!/rgba\(13,15,20,\.97\)/.test(themeSrc),
-      '可读面钉子：资料库不许回到 .97 实底（壁纸完全透不出，2026-10-31 用户反馈「还没适配」）');
+    ok(themeSrc.includes('wb-home-page-pc') && themeSrc.includes('background:transparent !important'),
+      '可读面钉子：资料库/知识库页全透明（2026-10-31 用户要求「三栏全透、文字浮在壁纸上」，去掉遮罩）');
+    ok(themeSrc.includes('text-shadow:0 1px 2px rgba(0,0,0,.6)'),
+      '可读面钉子：全透明后资料库文字必须加 text-shadow（无遮罩时文字可读性全靠阴影兜底）');
+    ok(!/rgba\(13,15,20,\.(97|85|70)\)/.test(themeSrc),
+      '可读面钉子：资料库不许再回到实底/半透明遮罩（用户已明确要全透明）');
     ok(!/'\[class\*="wb-home-guide-card"\]' \+ X/.test(themeSrc),
       '可读面钉子：卡片底色只能用 -card-pc，宽匹配会把 -title-pc/-desc-pc 一起上色（文字底下出现浅色方块）');
     ok(!/wb-home-page-pc[^\n]*backdrop-filter/.test(themeSrc),
