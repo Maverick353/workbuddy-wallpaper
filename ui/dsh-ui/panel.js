@@ -38,6 +38,16 @@ const LS_FX_DAYNIGHT = 'wdw.fx.daynight';
 const LS_FX_PARALLAX = 'wdw.fx.parallax';
 // 面板玻璃浓度（0~100，写 --wdw-glass-amount；与背景层无关，纯面板 UI 偏好）
 const LS_GLASS = 'wdw.glass';
+// 手动强调色（写 --wdw-accent-bg，覆盖壁纸主色采样；空串=跟随壁纸）
+const LS_ACCENT = 'wdw.accent';
+// 外观预设：accent + 玻璃浓度 + 蒙版 整套快照（借鉴 dsh 的 glass-presets）
+const LOOK_PRESETS = [
+  { id: 'follow', name: '跟随壁纸', accent: '', glass: 62, mask: 0 },
+  { id: 'deepblue', name: '深空蓝', accent: '#4f8cff', glass: 70, mask: 0 },
+  { id: 'cyan', name: '青蓝', accent: '#67DCE7', glass: 55, mask: 0 },
+  { id: 'purple', name: '紫色心情', accent: '#b388ff', glass: 60, mask: 10 },
+  { id: 'minimal', name: '极简白', accent: '#ffffff', glass: 45, mask: 20 },
+];
 /** 仓库过滤 chips（id → 标签）。fav 与其余并存：fav 只看收藏，其余按类型筛。 */
 const REPO_FILTERS = [
   { id: 'all', label: '全部' },
@@ -104,6 +114,7 @@ function wallpaperPanel(payload) {
     inj: undefined, mask: null, maskBusy: false, reinjectBusy: false, applying: '', pauseBusy: false,
     render: null,                 // WebGL 后端探测结果（软件渲染会让场景壁纸发糊，见 renderInfo）
     glass: null,                  // 面板玻璃浓度（0~100，写 --wdw-glass-amount；null=读取中）
+    accent: null,                 // 手动强调色（写 --wdw-accent-bg；null=跟随壁纸主色）
     fx: null,                     // 当前主题动态效果能力 { daynight, parallax }（来自 /api/wallpapers）
     fxDaynight: null, fxParallax: null, fxBusy: false,  // 昼夜循环/视差开关（null=读取中）
     // 场景属性（P0-2.3）：当前场景 general.properties 的可调属性表 + 已落盘值 + 忙碌态。
@@ -164,7 +175,7 @@ function wallpaperPanel(payload) {
       // 否则面板打开时导航栏按钮从面板上穿透，看着像面板错位（2026-10-29 实测）。
       // 不要去追 wbs-fab/wbs-root 的 2147483647（WorkDaddy 悬浮球），追不上也不必追。
       '#' + ID.root + '{position:fixed;top:34px;right:12px;height:calc(100vh - 46px);width:344px;z-index:1500;display:flex;flex-direction:column;box-sizing:border-box;',
-      '--wdw-ui-h:30px;--wdw-ui-radius:10px;--wdw-ease:cubic-bezier(0.16,1,0.3,1);--wdw-dur-fast:120ms;',
+      '--wdw-ui-h:30px;--wdw-ui-radius:10px;--wdw-ease:cubic-bezier(0.16,1,0.3,1);--wdw-dur-fast:120ms;--wdw-dur:220ms;--wdw-linear:linear;',
       '--wdw-ink:var(--wb-color-text-primary,#e8ecf4);--wdw-ink-2:var(--wb-color-text-secondary,rgba(232,236,244,.72));--wdw-ink-3:rgba(232,236,244,.5);',
       '--wdw-accent:var(--wdw-accent-bg,var(--wb-accent,#4f8cff));',
       '--wdw-glass-line:rgba(255,255,255,.12);--wdw-glass-fill:rgba(255,255,255,.07);--wdw-glass-fill-hi:rgba(255,255,255,.13);',
@@ -202,7 +213,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-tabs__pill{position:absolute;top:3px;left:3px;bottom:3px;border-radius:9px;',
       'background:color-mix(in srgb,var(--wb-bg-popover,#2a3040) 65%,transparent);box-shadow:0 2px 8px rgba(0,0,0,.30),inset 0 1px 0 rgba(255,255,255,.16);',
       'transition:transform 220ms var(--wdw-ease);will-change:transform}',
-      '#' + ID.root + ' .p-tab{position:relative;z-index:1;flex:1 1 0;min-width:0;height:28px;padding:0 4px;border:0;background:transparent;border-radius:8px;cursor:pointer;white-space:nowrap;font-size:12px;line-height:1;color:var(--wdw-ink-2);transition:color var(--wdw-dur-fast) var(--wdw-ease)}',
+      '#' + ID.root + ' .p-tab{position:relative;z-index:1;flex:1 1 0;min-width:0;height:28px;padding:0 4px;border:0;background:transparent;border-radius:8px;cursor:pointer;white-space:nowrap;font-size:12px;line-height:1;color:var(--wdw-ink-2);transition:color var(--wdw-dur-fast) var(--wdw-linear)}',
       '#' + ID.root + ' .p-tab:hover{color:var(--wdw-ink)}',
       '#' + ID.root + ' .p-tab.wdw-on{color:var(--wdw-ink);font-weight:600}',
       // ── 页签小红点（「关于」页有新版本时）──
@@ -235,7 +246,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-row-l i{font-style:normal;font-size:11px;color:var(--wdw-ink-3)}',
       // 分段控件（来源切换）
       '#' + ID.root + ' .p-seg{display:flex;gap:4px}',
-      '#' + ID.root + ' .p-seg button{flex:1;height:28px;border-radius:10px;border:1px solid var(--wdw-glass-line);background:var(--wdw-glass-fill);color:var(--wdw-ink-2);cursor:pointer;font-size:12px;transition:background var(--wdw-dur-fast),border-color var(--wdw-dur-fast)}',
+      '#' + ID.root + ' .p-seg button{flex:1;height:28px;border-radius:10px;border:1px solid var(--wdw-glass-line);background:var(--wdw-glass-fill);color:var(--wdw-ink-2);cursor:pointer;font-size:12px;transition:background var(--wdw-dur-fast) var(--wdw-linear),border-color var(--wdw-dur-fast) var(--wdw-linear)}',
       '#' + ID.root + ' .p-seg button:hover{background:var(--wdw-glass-fill-hi)}',
       '#' + ID.root + ' .p-seg button.wdw-on{background:color-mix(in srgb,var(--wdw-accent) 30%,transparent);border-color:color-mix(in srgb,var(--wdw-accent) 55%,transparent);color:var(--wdw-ink);font-weight:600}',
       // 按钮
@@ -252,7 +263,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-btn[disabled]{opacity:.5;cursor:default}',
       // 网格卡片（壁纸缩略图）
       '#' + ID.root + ' .p-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}',
-      '#' + ID.root + ' .p-card{position:relative;aspect-ratio:16/10;border-radius:12px;overflow:hidden;cursor:pointer;border:1px solid rgba(255,255,255,.14);background:#0b0d12 center/cover no-repeat;transition:border-color var(--wdw-dur-fast),transform var(--wdw-dur-fast),box-shadow var(--wdw-dur-fast)}',
+      '#' + ID.root + ' .p-card{position:relative;aspect-ratio:16/10;border-radius:12px;overflow:hidden;cursor:pointer;border:1px solid rgba(255,255,255,.14);background:#0b0d12 center/cover no-repeat;transition:border-color var(--wdw-dur-fast) var(--wdw-linear),transform var(--wdw-dur) var(--wdw-ease),box-shadow var(--wdw-dur-fast) var(--wdw-linear)}',
       '#' + ID.root + ' .p-card:hover{border-color:rgba(255,255,255,.45);transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.35)}',
       '#' + ID.root + ' .p-card.wdw-cur{box-shadow:inset 0 0 0 2px var(--wdw-accent)}',
       '#' + ID.root + ' .p-card .cap{position:absolute;left:0;right:0;bottom:0;padding:3px 6px;font-size:10px;background:linear-gradient(transparent,rgba(0,0,0,.72));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
@@ -262,7 +273,7 @@ function wallpaperPanel(payload) {
       // ── 壁纸仓库（标签 chips + 搜索 + 收藏星标）──
       '#' + ID.root + ' .p-repo{display:flex;gap:8px;align-items:center}',
       '#' + ID.root + ' .p-chips{display:flex;gap:4px;flex-wrap:wrap;flex:1 1 auto;min-width:0}',
-      '#' + ID.root + ' .p-chips button{height:24px;padding:0 8px;border-radius:999px;border:1px solid var(--wdw-glass-line);background:var(--wdw-glass-fill);color:var(--wdw-ink-2);cursor:pointer;font-size:11px;line-height:1;transition:color var(--wdw-dur-fast),background var(--wdw-dur-fast)}',
+      '#' + ID.root + ' .p-chips button{height:24px;padding:0 8px;border-radius:999px;border:1px solid var(--wdw-glass-line);background:var(--wdw-glass-fill);color:var(--wdw-ink-2);cursor:pointer;font-size:11px;line-height:1;transition:color var(--wdw-dur-fast) var(--wdw-linear),background var(--wdw-dur-fast) var(--wdw-linear)}',
       '#' + ID.root + ' .p-chips button:hover{color:var(--wdw-ink);background:var(--wdw-glass-fill-hi)}',
       '#' + ID.root + ' .p-chips button.wdw-on{background:color-mix(in srgb,var(--wdw-accent) 30%,transparent);border-color:color-mix(in srgb,var(--wdw-accent) 55%,transparent);color:var(--wdw-ink);font-weight:600}',
       '#' + ID.root + ' .p-search{flex:0 0 104px;height:24px;border-radius:999px;border:1px solid var(--wdw-glass-line);background:var(--wdw-glass-fill);color:inherit;font-size:11px;padding:0 9px;outline:none}',
@@ -274,7 +285,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-card .star.wdw-on{opacity:1}',
       // 滑块 / 开关
       '#' + ID.root + ' input[type=range]{width:120px;accent-color:var(--wdw-accent)}',
-      '#' + ID.root + ' .p-sw{position:relative;width:40px;height:22px;border-radius:999px;border:1px solid rgba(255,255,255,.18);background:var(--wdw-glass-fill);cursor:pointer;transition:background var(--wdw-dur-fast);flex:0 0 auto}',
+      '#' + ID.root + ' .p-sw{position:relative;width:40px;height:22px;border-radius:999px;border:1px solid rgba(255,255,255,.18);background:var(--wdw-glass-fill);cursor:pointer;transition:background var(--wdw-dur-fast) var(--wdw-linear),border-color var(--wdw-dur-fast) var(--wdw-linear);flex:0 0 auto}',
       '#' + ID.root + ' .p-sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform 160ms var(--wdw-ease)}',
       '#' + ID.root + ' .p-sw.wdw-on{background:color-mix(in srgb,var(--wdw-accent) 60%,transparent)}',
       '#' + ID.root + ' .p-sw.wdw-on::after{transform:translateX(18px)}',
@@ -571,6 +582,22 @@ function wallpaperPanel(payload) {
           + '<i>调低更通透、调高更实；可读性下限已兜底，不会调到看不清字</i></span>'
           + '<span class="p-hint p-tag" data-glass-pct>' + g + '%</span></div>'
           + '<input class="p-range" id="wdw-glass" type="range" min="0" max="100" step="5" value="' + g + '">'
+          + '</div>';
+      })()
+      // ②a′ 外观预设（借鉴 dsh 的 glass-presets）：accent + 玻璃浓度 + 蒙版 整套快照一键切换。
+      + (function () {
+        var cur = '';
+        try { cur = localStorage.getItem('wdw.accent') || ''; } catch (_) {}
+        return '<div class="p-sec"><span class="p-sec-t">外观预设</span>'
+          + '<div class="p-hint">一键切换整套外观（强调色 + 玻璃 + 蒙版）</div>'
+          + '<div class="p-chips">'
+          + LOOK_PRESETS.map(function (p) {
+            var on = p.accent === cur || (p.id === 'follow' && !cur);
+            return '<button type="button" data-act="look-preset" data-v="' + p.id + '"' + (on ? ' class="wdw-on"' : '') + '>' + p.name + '</button>';
+          }).join('')
+          + '</div>'
+          + '<div class="p-row"><span class="p-row-l"><b>强调色</b><i>手动覆盖壁纸主色；「跟随壁纸」清除覆盖</i></span>'
+          + '<label class="p-color"><input type="color" id="wdw-accent-color" data-act="accent-color" value="' + (cur || '#4f8cff') + '"><span>' + (cur || '跟随') + '</span></label></div>'
           + '</div>';
       })()
       // ②b 动态效果（P0-2.3）：昼夜循环 + 鼠标视差。开关写 localStorage，重注入即时生效。
@@ -1122,6 +1149,34 @@ function wallpaperPanel(payload) {
     applyGlassVar(n);
     paint();
   }
+  /** 手动强调色（写 --wdw-accent-bg；空串 = 清除覆盖，跟随壁纸主色）。 */
+  function loadAccent() {
+    try { st.accent = localStorage.getItem(LS_ACCENT) || ''; } catch (_) { st.accent = ''; }
+    applyAccentVar(st.accent);
+  }
+  function applyAccentVar(hex) {
+    var el = document.getElementById(ID.root);
+    if (!el) return;
+    if (hex) el.style.setProperty('--wdw-accent-bg', hex);
+    else el.style.removeProperty('--wdw-accent-bg');
+  }
+  function setAccent(hex) {
+    st.accent = hex || '';
+    try { localStorage.setItem(LS_ACCENT, st.accent); } catch (_) {}
+    applyAccentVar(st.accent);
+    paint();
+  }
+  /** 应用外观预设：accent + 玻璃浓度 + 蒙版 整套一次性生效。 */
+  function applyLookPreset(id) {
+    var p = null;
+    for (var i = 0; i < LOOK_PRESETS.length; i++) if (LOOK_PRESETS[i].id === id) { p = LOOK_PRESETS[i]; break; }
+    if (!p) return;
+    setAccent(p.accent);
+    setGlass(p.glass);
+    if (p.mask > 0) setMask(p.mask / 100);
+    else setMask(0);
+    toast('已应用外观：' + p.name, 2000);
+  }
 
   function doReinject() {
     st.reinjectBusy = true; st.err = ''; paint();
@@ -1301,6 +1356,7 @@ function wallpaperPanel(payload) {
           } else if (a === 'close') { api_close(); }
           else if (a === 'reinject') { doReinject(); }
           else if (a === 'mask-preset') { setMask(Number(act.getAttribute('data-v')) || 0); }
+          else if (a === 'look-preset') { applyLookPreset(act.getAttribute('data-v')); }
           else if (a === 'scene-fps') { setSceneFps(Number(act.getAttribute('data-v')) || 30); }
           else if (a === 'upload') {
             var f = el.querySelector('#wdw-up-file');
@@ -1362,6 +1418,7 @@ function wallpaperPanel(payload) {
       if (t.id === 'wdw-fontcolor') { setFont({ color: t.value }); paint(); return; }
       if (t.id === 'wdw-mask') { setMask(Number(t.value) / 100); return; }
       if (t.id === 'wdw-glass') { setGlass(Number(t.value)); return; }
+      if (t.id === 'wdw-accent-color') { setAccent(t.value); return; }
       // 场景属性：slider / color / combo（P0-2.3）—— change 时提交
       var sc = t && t.getAttribute && t.getAttribute('data-scprop') ? t : (t && t.closest ? t.closest('[data-scprop]') : null);
       if (sc && sc.getAttribute('data-type') !== 'bool') {
@@ -1463,6 +1520,7 @@ function wallpaperPanel(payload) {
     st.open = true;
     el.classList.add('wdw-open');
     loadGlass();   // 玻璃浓度是纯前端（localStorage + CSS 变量），同步应用
+    loadAccent();  // 手动强调色，同步应用（覆盖壁纸主色采样）
     // 服务不可达时 loadXxx 置 offline → paint 出错误态提示条（而非空白/无反应）
     Promise.all([loadWallpapers(), loadCustom(), loadHealth(), loadMask()]).then(function () { paint(); }).catch(function () {});
     // 更新状态：读缓存立刻渲染；缓存过期才后台补检查（不阻塞打开）

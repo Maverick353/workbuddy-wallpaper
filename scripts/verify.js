@@ -1126,6 +1126,19 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '可读性钉子：玻璃浓度滑条（wdw-glass + data-glass-pct 实时百分比）已接线');
   }
 
+  // ── 外观预设 + 动效分类（借鉴 dsh-wallpaper-engine 的 glass-presets 与动效曲线）──
+  {
+    const panelSrc4 = readT('ui/dsh-ui/panel.js');
+    ok(/LOOK_PRESETS/.test(panelSrc4) && /applyLookPreset/.test(panelSrc4),
+      '外观预设钉子：要有 LOOK_PRESETS 整套快照 + applyLookPreset 一键切换（accent+玻璃+蒙版）');
+    ok(/setAccent/.test(panelSrc4) && /--wdw-accent-bg/.test(panelSrc4) && /loadAccent/.test(panelSrc4),
+      '外观预设钉子：手动强调色 setAccent 写 --wdw-accent-bg（空串=清除覆盖跟随壁纸主色），loadAccent 恢复');
+    ok(/--wdw-dur:220ms/.test(panelSrc4) && /--wdw-linear:linear/.test(panelSrc4),
+      '动效分类钉子：要有主过渡 220ms + linear 曲线两个令牌（背景色走 linear、transform 走缓动）');
+    ok(/--wdw-dur\) var\(--wdw-ease\)/.test(panelSrc4) && /--wdw-dur-fast\) var\(--wdw-linear\)/.test(panelSrc4),
+      '动效分类钉子：transform/位移走 220ms 缓动、背景色/边框色走 120ms linear（分类用曲线，不混用）');
+  }
+
   // ── 暂停 / 退出分离（2026-10-28「关闭壁纸 ≈ 卸载」的回归钉）──────────────────
   //  背景：旧版只有一个「关闭壁纸」= 写 .stopped + 服务退出 + companion 不再拉起，
   //  想「先关一会儿」的用户实际执行了「卸载」，且面板一起消失、无法自救。
