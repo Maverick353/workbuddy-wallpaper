@@ -997,6 +997,9 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '报告卡片钉子：定时任务报告页 automation-run-group__item 必须半透明化（宿主原生 rgb(10,10,10) 不透明底会把壁纸盖死）');
     ok(!/automation-run-group__item[^\n]*backdrop-filter/.test(themeSrc),
       '报告卡片钉子：automation 卡片同样不许加 backdrop-filter（GPU 代价）');
+    // ── 2026-10-31「输入框下方推荐问题胶囊发黑」回归钉 ──
+    ok(themeSrc.includes('wb-conversation-quick-qa-recommend') && themeSrc.includes('color-mix(in srgb,var(--wb-bg-primary) 40%,transparent)'),
+      '推荐胶囊钉子：wb-conversation-quick-qa-recommend 必须玻璃态（40% 主题底 + blur，与聊天输入框同款，替代 hover 黑底）');
   }
 
   // ── 面板层级（2026-10-29「面板在特定场景错位」回归钉）──

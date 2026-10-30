@@ -164,6 +164,13 @@ function resolveBackgroundAssets(p) {
           P + '[class*="_capsule_"]' + X + '{background-color:rgba(255,255,255,.06) !important;background-image:none !important;border-color:rgba(255,255,255,.16) !important}',
           P + '[class*="_previewHeader_"]' + X + '{background:transparent !important}',
           P + '.cr-input-container' + X + '{background:transparent !important}',
+          // 2026-10-31「输入框下方推荐问题胶囊是黑底」：wb-conversation-quick-qa-recommend 本体
+          //   background 是 transparent，但 hover 用 --wb-bg-hover（深色主题=深色半透明），观感发黑。
+          //   改成与聊天输入框同款玻璃态：40% 主题底 + blur(16px)，hover 也压成通透玻璃而非黑块。
+          //   （四颗小胶囊，backdrop-filter 代价可忽略，不同于大面板的 GPU 红线。）
+          P + '.wb-conversation-quick-qa-recommend' + X + '{background:color-mix(in srgb,var(--wb-bg-primary) 40%,transparent) !important;border-color:rgba(255,255,255,.16) !important;backdrop-filter:blur(16px) saturate(1.15);-webkit-backdrop-filter:blur(16px) saturate(1.15)}',
+          P + '.wb-conversation-quick-qa-recommend:hover' + X + '{background:color-mix(in srgb,var(--wb-bg-primary) 55%,transparent) !important;border-color:rgba(255,255,255,.28) !important}',
+          P + '.wb-conversation-quick-qa-recommend-icon' + X + '{color:var(--wb-color-text-primary) !important}',
           // WorkDaddy 注入的输入框内联按钮（「暂存提示词」/「增强」）自带 90% 白底，在透明主题下
           // 就是两个白圆块（用户实测反馈）。与同排的语音/模型选择按钮对齐：一律透明。
           P + '[class*="wbs-stash-inline"]' + X + ',' + P + '[class*="wbs-explore-inline"]' + X + '{background:transparent !important;border-color:transparent !important}',
