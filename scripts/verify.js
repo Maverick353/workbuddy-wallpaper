@@ -986,8 +986,8 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
   // ── 页面型内容的可读面（2026-10-28「资料库像图片裂了」事故的回归钉）──
   {
     const themeSrc = readT('core/theme-css.js');
-    ok(themeSrc.includes('wb-home-page-pc') && themeSrc.includes('rgba(13,15,20,.70)'),
-      '可读面钉子：资料库/知识库页用 .70 半透明底（2026-10-31 用户要求透出壁纸；比 .97 通透，深色壁纸下文字仍可读）');
+    ok(themeSrc.includes('wb-home-page-pc') && themeSrc.includes('rgba(13,15,20,.85)'),
+      '可读面钉子：资料库/知识库页用 .85 半透明底（2026-10-31：.70 太透、亮星云下文字发虚，.85 压得住亮部又保壁纸氛围）');
     ok(!/rgba\(13,15,20,\.97\)/.test(themeSrc),
       '可读面钉子：资料库不许回到 .97 实底（壁纸完全透不出，2026-10-31 用户反馈「还没适配」）');
     ok(!/'\[class\*="wb-home-guide-card"\]' \+ X/.test(themeSrc),

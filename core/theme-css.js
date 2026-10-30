@@ -132,14 +132,14 @@ function resolveBackgroundAssets(p) {
           //   修法：**只给最外层 wb-home-page-pc 一层底板**，内层显式 transparent（否则 .97 × 三层 ≈ 全黑），
           //   卡片再抬 .07 白做层级；左侧知识库栏同款底板。
           //   不透明度历史：.74（壁纸影响 69 级）→ .92（32 级）→ .97（<10 级，文字最清晰）。
-          //   2026-10-31 用户要求「资料库要透出壁纸、要玻璃感」→ 回退到 .70：壁纸明显透出、
-          //   文字仍可读（当前深色壁纸下对比足够）。⚠️ 仍不加 backdrop-filter（GPU 红线，
-          //   大面板 18px blur 让 GPU 425%→629%）。若要再调，记下：.70 是「透出」与「可读」的当前折中点。
+          //   2026-10-31 用户要求「资料库要透出壁纸、要玻璃感」→ 先 .70，实测亮部壁纸下左侧栏
+          //   文字叠在星云上发虚（糊掉），改 .85：压得住亮星云、文字可读，又比 .97 通透、壁纸氛围还在。
+          //   ⚠️ 仍不加 backdrop-filter（GPU 红线，大面板 18px blur 让 GPU 425%→629%）。
           //   ⚠️ 也试过 .82 + backdrop-filter:blur(18px)：观感最好，但 GPU 进程从 425% 飙到 629%
           //     （≈多烧 2 核，场景壁纸本身已在动画），代价不划算，撤掉。
-          P + '[class*="wb-home-page-pc"]' + X + '{background:rgba(13,15,20,.70) !important;border-radius:16px}',
+          P + '[class*="wb-home-page-pc"]' + X + '{background:rgba(13,15,20,.85) !important;border-radius:16px}',
           P + '[class*="wb-home-page-body"]' + X + ',' + P + '[class*="wb-home-guide-dock"]' + X + '{background:transparent !important}',
-          P + '[class*="knowledge-sidebar-pc"]' + X + '{background:rgba(13,15,20,.70) !important;border-radius:16px}',
+          P + '[class*="knowledge-sidebar-pc"]' + X + '{background:rgba(13,15,20,.85) !important;border-radius:16px}',
           // 只给卡片本体（-card-pc），别用 [class*="wb-home-guide-card"] —— 那会连 -title-pc / -desc-pc
           // 一起上色，文字底下出现一块块浅色方块（实测踩过）。
           P + '[class*="wb-home-guide-card-pc"]' + X + '{background:rgba(255,255,255,.07) !important}',
