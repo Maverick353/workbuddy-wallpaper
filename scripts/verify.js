@@ -1139,6 +1139,22 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '动效分类钉子：transform/位移走 220ms 缓动、背景色/边框色走 120ms linear（分类用曲线，不混用）');
   }
 
+  // ── 性能/体验优化（P1 空闲降帧 · E1 自动轮播 · E2 最近使用 · P3 加载淡入）──
+  {
+    const bgSrc4 = readT('ui/background.js');
+    ok(/function installIdleThrottle/.test(bgSrc4) && /__weSetFps/.test(bgSrc4) && /op: 'setFps'/.test(bgSrc4),
+      '空闲降帧钉子：background.js 要监听鼠标/键盘空闲（默认 60s）降场景到 15fps，__weSetFps 双通道恢复');
+    ok(/opacity:0/.test(bgSrc4) && /opacity 400ms/.test(bgSrc4) && /linear-gradient\(160deg/.test(bgSrc4),
+      '加载淡入钉子：场景 iframe 初始 opacity:0 + 柔和渐变底，load 后 400ms 淡入（消除死黑割裂）');
+    const panelSrc5 = readT('ui/dsh-ui/panel.js');
+    ok(/function pushRecent/.test(panelSrc5) && /LS_RECENT/.test(panelSrc5) && /data-recent/.test(panelSrc5),
+      '最近使用钉子：apply/applyWe 要 pushRecent（去重限 8），库页 data-recent 快捷段已接线');
+    ok(/function rotateOnce/.test(panelSrc5) && /function setRotate/.test(panelSrc5) && /st\.paused/.test(panelSrc5),
+      '自动轮播钉子：rotateOnce 从当前源随机切换、setRotate 调度定时器、暂停时跳过轮播');
+    ok(/data-act="rotate"/.test(panelSrc5) && /scheduleRotate/.test(panelSrc5),
+      '自动轮播钉子：库页要有间隔档位（关/5/15/30/60 分）且 scheduleRotate 落地');
+  }
+
   // ── 暂停 / 退出分离（2026-10-28「关闭壁纸 ≈ 卸载」的回归钉）──────────────────
   //  背景：旧版只有一个「关闭壁纸」= 写 .stopped + 服务退出 + companion 不再拉起，
   //  想「先关一会儿」的用户实际执行了「卸载」，且面板一起消失、无法自救。

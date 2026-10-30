@@ -40,6 +40,10 @@ const LS_FX_PARALLAX = 'wdw.fx.parallax';
 const LS_GLASS = 'wdw.glass';
 // 手动强调色（写 --wdw-accent-bg，覆盖壁纸主色采样；空串=跟随壁纸）
 const LS_ACCENT = 'wdw.accent';
+// 最近使用（最多 8 条，库页顶部快捷段；纯前端 localStorage）
+const LS_RECENT = 'wdw.recent';
+// 自动轮播间隔（分钟；0=关闭，5/15/30/60 可选）
+const LS_ROTATE = 'wdw.rotate';
 // 外观预设：accent + 玻璃浓度 + 蒙版 整套快照（借鉴 dsh 的 glass-presets）
 const LOOK_PRESETS = [
   { id: 'follow', name: '跟随壁纸', accent: '', glass: 62, mask: 0 },
@@ -115,6 +119,9 @@ function wallpaperPanel(payload) {
     render: null,                 // WebGL 后端探测结果（软件渲染会让场景壁纸发糊，见 renderInfo）
     glass: null,                  // 面板玻璃浓度（0~100，写 --wdw-glass-amount；null=读取中）
     accent: null,                 // 手动强调色（写 --wdw-accent-bg；null=跟随壁纸主色）
+    recent: null,                 // 最近使用列表（库页快捷段；null=未读取）
+    rotate: 0,                    // 自动轮播间隔（分钟；0=关闭）
+    rotateTimer: null,            // 轮播定时器句柄
     fx: null,                     // 当前主题动态效果能力 { daynight, parallax }（来自 /api/wallpapers）
     fxDaynight: null, fxParallax: null, fxBusy: false,  // 昼夜循环/视差开关（null=读取中）
     // 场景属性（P0-2.3）：当前场景 general.properties 的可调属性表 + 已落盘值 + 忙碌态。
@@ -279,6 +286,10 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-search{flex:0 0 104px;height:24px;border-radius:999px;border:1px solid var(--wdw-glass-line);background:var(--wdw-glass-fill);color:inherit;font-size:11px;padding:0 9px;outline:none}',
       '#' + ID.root + ' .p-search:focus{border-color:color-mix(in srgb,var(--wdw-accent) 60%,transparent)}',
       '#' + ID.root + ' .p-repo-count{font-size:11px;color:var(--wdw-ink-3);padding:0 2px}',
+      // 最近使用快捷段（E2）：横向一排小缩略图
+      '#' + ID.root + ' .p-recent{display:flex;gap:8px;flex-wrap:wrap}',
+      '#' + ID.root + ' .p-rcard{width:56px;height:36px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#0b0d12 center/cover no-repeat;cursor:pointer;padding:0;flex:0 0 auto;transition:border-color var(--wdw-dur-fast) var(--wdw-linear),transform var(--wdw-dur) var(--wdw-ease)}',
+      '#' + ID.root + ' .p-rcard:hover{border-color:rgba(255,255,255,.45);transform:translateY(-1px)}',
       // 收藏星标：圆形容器 + flex 居中（字体居中不能靠 default 的按钮内边距，会偏）
       '#' + ID.root + ' .p-card .star{position:absolute;top:5px;right:5px;width:22px;height:22px;box-sizing:border-box;border-radius:50%;border:0;background:rgba(0,0,0,.5);color:#ffd166;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;text-align:center;opacity:0;transition:opacity var(--wdw-dur-fast)}',
       '#' + ID.root + ' .p-card:hover .star{opacity:1}',
@@ -430,6 +441,26 @@ function wallpaperPanel(payload) {
         var label = { custom: '自定义', we: 'WE 库' }[k];
         return '<button data-src="' + k + '" class="' + (st.source === k ? 'wdw-on' : '') + '">' + label + '</button>';
       }).join('') + '</div>';
+    // 最近使用（E2）：库页顶部一排小缩略图，点击即重新应用，省去翻库
+    var recent = st.recent || [];
+    var recentBar = '';
+    if (recent.length) {
+      recentBar = '<div class="p-sec"><span class="p-sec-t">最近使用</span>'
+        + '<div class="p-recent">'
+        + recent.map(function (r) {
+          var thumb = r.thumb || '';
+          var style = thumb ? ' style="background-image:url(' + esc(thumb) + ')"' : '';
+          return '<button type="button" class="p-rcard" data-recent="' + r.kind + ':' + esc(r.id) + '" title="' + esc(r.title || r.id) + '"' + style + '></button>';
+        }).join('')
+        + '</div></div>';
+    }
+    // 自动轮播（E1）：间隔档位，0=关闭；从当前源筛选后列表随机切换
+    var rotOpts = [{ v: 0, t: '关' }, { v: 5, t: '5分' }, { v: 15, t: '15分' }, { v: 30, t: '30分' }, { v: 60, t: '60分' }];
+    var rotateBar = '<div class="p-sec"><span class="p-sec-t">自动轮播</span>'
+      + '<div class="p-row"><span class="p-row-l"><b>定时换壁纸</b><i>按间隔从当前列表随机切换</i></span></div>'
+      + '<div class="p-seg">' + rotOpts.map(function (o) {
+        return '<button type="button" data-act="rotate" data-v="' + o.v + '"' + (st.rotate === o.v ? ' class="wdw-on"' : '') + '>' + o.t + '</button>';
+      }).join('') + '</div></div>';
     // 壁纸仓库条：标签 chips（全部/收藏/场景/视频/图片）+ 关键词搜索
     var repoBar = '<div class="p-repo">'
       + '<div class="p-chips">' + FILTERS.map(function (f) {
@@ -447,7 +478,7 @@ function wallpaperPanel(payload) {
         + '<button class="p-btn" data-act="scan-we"' + (st.weBusy ? ' disabled' : '') + '>' + (st.weBusy ? '扫描中…' : '扫描') + '</button></div>';
     }
 
-    return '<div class="p-pane">' + seg + repoBar + offlineBarHtml()
+    return '<div class="p-pane">' + seg + recentBar + rotateBar + repoBar + offlineBarHtml()
       + '<div class="p-repo-count"><span id="wdw-repo-count">' + esc(repoCountText()) + '</span></div>'
       + '<div id="wdw-repo-grid">' + gridHtml() + '</div>'
       + foot
@@ -1177,6 +1208,51 @@ function wallpaperPanel(payload) {
     else setMask(0);
     toast('已应用外观：' + p.name, 2000);
   }
+  /** 最近使用：读 localStorage（最多 8 条，去重，新在前）。 */
+  function loadRecent() {
+    try { st.recent = JSON.parse(localStorage.getItem(LS_RECENT) || '[]'); } catch (_) { st.recent = []; }
+    if (!Array.isArray(st.recent)) st.recent = [];
+  }
+  /** 记录一次应用（去重 + 限长 8）。entry: { kind:'file'|'we', id, title, thumb } */
+  function pushRecent(entry) {
+    loadRecent();
+    var out = [entry].concat(st.recent.filter(function (r) { return !(r && r.kind === entry.kind && r.id === entry.id); }));
+    st.recent = out.slice(0, 8);
+    try { localStorage.setItem(LS_RECENT, JSON.stringify(st.recent)); } catch (_) {}
+  }
+  /** 自动轮播（E1）：读间隔（分钟，0=关闭）；当前源筛选后列表随机切一张。 */
+  function loadRotate() {
+    try { st.rotate = Math.max(0, parseInt(localStorage.getItem(LS_ROTATE), 10) || 0); } catch (_) { st.rotate = 0; }
+    scheduleRotate();
+  }
+  function setRotate(min) {
+    st.rotate = Math.max(0, Math.round(Number(min)) || 0);
+    try { localStorage.setItem(LS_ROTATE, String(st.rotate)); } catch (_) {}
+    scheduleRotate();
+    paint();
+  }
+  function scheduleRotate() {
+    if (st.rotateTimer) { clearInterval(st.rotateTimer); st.rotateTimer = null; }
+    if (!st.rotate) return;
+    st.rotateTimer = setInterval(function () { rotateOnce(); }, st.rotate * 60000);
+  }
+  function rotateOnce() {
+    if (st.paused) return;   // 暂停壁纸时不轮播
+    var pool = [];
+    if (st.source === 'we') {
+      pool = (st.we && st.we.items ? st.we.items : []).map(function (it) { return { kind: 'we', id: String(it.id), title: it.title }; });
+    } else {
+      pool = (st.custom || []).map(function (w) { return { kind: 'file', id: w.name, title: w.title }; });
+    }
+    if (pool.length < 2) return;
+    // 排除当前壁纸，避免「切到自己」
+    var curKey = st.source === 'we' ? String(st.curWe) : (st.cur || '');
+    var cands = pool.filter(function (p) { return p.id !== curKey; });
+    if (!cands.length) cands = pool;
+    var pick = cands[Math.floor(Math.random() * cands.length)];
+    if (pick.kind === 'we') applyWe(pick.id, pick.title);
+    else apply(pick.id, pick.title);
+  }
 
   function doReinject() {
     st.reinjectBusy = true; st.err = ''; paint();
@@ -1196,6 +1272,7 @@ function wallpaperPanel(payload) {
       st.applying = '';
       if (d == null) { st.err = '应用失败：服务未响应'; paint(); return; }
       if (!d.ok) { st.err = '应用失败：' + (d.error || '未知原因'); paint(); return; }
+      pushRecent({ kind: 'file', id: name, title: title || name, thumb: API + '/wallpapers/' + encodeURIComponent(name) });
       return loadWallpapers().then(function () {
         paint();
         toast('已应用' + (title ? '：' + title : ''));
@@ -1247,6 +1324,7 @@ function wallpaperPanel(payload) {
       st.applying = '';
       if (d == null) { st.err = '应用失败：服务未响应'; paint(); return; }
       if (!d.ok) { st.err = '应用失败：' + (d.error || '未知原因'); paint(); return; }
+      pushRecent({ kind: 'we', id: String(id), title: d.title || title || id, thumb: API + '/wallpaper-engine/scene-files/' + encodeURIComponent(String(id)) + '/preview.jpg' });
       return loadWallpapers().then(function () {
         paint();
         toast('已应用' + (d.title ? '：' + d.title : ''));
@@ -1293,6 +1371,16 @@ function wallpaperPanel(payload) {
           var fname = fontBtn.getAttribute('data-font');
           setFont({ family: fontStack(fname), familyName: fname });
           paint(); return;
+        }
+        // 最近使用（E2）：点击小缩略图重新应用
+        var rcBtn = t.closest ? t.closest('[data-recent]') : null;
+        if (rcBtn) {
+          var rv = String(rcBtn.getAttribute('data-recent') || '');
+          var ci = rv.indexOf(':');
+          var rk = rv.slice(0, ci), rid = rv.slice(ci + 1);
+          if (rk === 'we') applyWe(rid, rcBtn.getAttribute('title') || '');
+          else apply(rid, rcBtn.getAttribute('title') || '');
+          return;
         }
         // 来源分段
         var srcBtn = t.closest ? t.closest('[data-src]') : null;
@@ -1357,6 +1445,7 @@ function wallpaperPanel(payload) {
           else if (a === 'reinject') { doReinject(); }
           else if (a === 'mask-preset') { setMask(Number(act.getAttribute('data-v')) || 0); }
           else if (a === 'look-preset') { applyLookPreset(act.getAttribute('data-v')); }
+          else if (a === 'rotate') { setRotate(Number(act.getAttribute('data-v')) || 0); }
           else if (a === 'scene-fps') { setSceneFps(Number(act.getAttribute('data-v')) || 30); }
           else if (a === 'upload') {
             var f = el.querySelector('#wdw-up-file');
@@ -1521,6 +1610,8 @@ function wallpaperPanel(payload) {
     el.classList.add('wdw-open');
     loadGlass();   // 玻璃浓度是纯前端（localStorage + CSS 变量），同步应用
     loadAccent();  // 手动强调色，同步应用（覆盖壁纸主色采样）
+    loadRecent();  // 最近使用列表（库页快捷段）
+    loadRotate();  // 自动轮播（读间隔并调度定时器）
     // 服务不可达时 loadXxx 置 offline → paint 出错误态提示条（而非空白/无反应）
     Promise.all([loadWallpapers(), loadCustom(), loadHealth(), loadMask()]).then(function () { paint(); }).catch(function () {});
     // 更新状态：读缓存立刻渲染；缓存过期才后台补检查（不阻塞打开）

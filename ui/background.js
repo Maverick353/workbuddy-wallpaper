@@ -187,6 +187,38 @@ function wallpaperBackground(payload) {
     window.addEventListener('focus', function () { apply(paused()); });
   }
 
+  // ── 空闲降帧（P1，零外部依赖）────────────────────────────────────────
+  // 窗口在前台但鼠标/键盘长时间无活动时（默认 60s），把场景帧率降到 15fps；
+  // 检测到活动立即恢复原帧率。补齐「遮挡暂停」没覆盖的「前台但闲置」场景，
+  // 场景壁纸是 GPU 大户，闲置时白烧算力（实测能到 425%）。只调 __weSetFps，
+  // 幂等可逆、不销毁层。
+  var idleInstalled = false;
+  function installIdleThrottle(getScene, baseFps) {
+    if (idleInstalled) return;
+    idleInstalled = true;
+    var IDLE_MS = 60000;
+    var idleFps = 15;
+    var base = (Number.isFinite(Number(baseFps)) && Number(baseFps) > 0) ? Math.round(Number(baseFps)) : 30;
+    var last = Date.now();
+    var idle = false;
+    function setFps(n) {
+      var sc = getScene();
+      if (!sc) return;
+      try { if (sc.contentWindow && sc.contentWindow.__weSetFps) { sc.contentWindow.__weSetFps(n); } } catch (_) {}
+      try { sc.contentWindow.postMessage({ __we: 1, op: 'setFps', n: n }, '*'); } catch (_) {}
+    }
+    function check() {
+      var now = Date.now();
+      var isIdle = (now - last) >= IDLE_MS;
+      if (isIdle !== idle) { idle = isIdle; setFps(idle ? idleFps : base); }
+    }
+    function poke() { last = Date.now(); if (idle) { idle = false; setFps(base); } }
+    document.addEventListener('mousemove', poke, { passive: true });
+    document.addEventListener('keydown', poke, { passive: true });
+    document.addEventListener('wheel', poke, { passive: true });
+    setInterval(check, 10000);   // 每 10s 检一次，低频无开销
+  }
+
   // ── 主色驱动 accent（P0-2.2，零外部依赖）───────────────────────────────
   // 图片壁纸：读 dataURL 像素算平均主色，写到 --wdw-accent（面板玻璃拟态随壁纸换肤）。
   // 视频/场景取不到像素 → 跳过，保持宿主默认 accent（不破坏现有观感）。
@@ -306,11 +338,19 @@ function wallpaperBackground(payload) {
         sf.setAttribute('allow', 'autoplay');
         sf.setAttribute('frameborder', '0');
         sf.setAttribute('title', 'Wallpaper Scene');
-        sf.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;border:0;z-index:-1;pointer-events:none;background:#000;';
+        // 加载淡入（P3）：初始 opacity:0 + 柔和深色底（替代死黑），load 后淡入，
+        // 消除「切场景壁纸黑屏一秒」的割裂感。深色底用渐变更柔，不做纯 #000。
+        sf.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;border:0;z-index:-1;pointer-events:none;opacity:0;transition:opacity 400ms ease;background:linear-gradient(160deg,#0e1118,#151a24);';
         var shost = document.body || document.documentElement;
         shost.insertBefore(sf, shost.firstChild);
       }
-      if (sf.getAttribute('data-src-key') !== surl) { sf.setAttribute('data-src-key', surl); sf.src = surl; }
+      if (sf.getAttribute('data-src-key') !== surl) {
+        sf.setAttribute('data-src-key', surl);
+        sf.style.opacity = '0';   // 换源时回到淡入起点
+        var sfOnLoad = function () { sf.removeEventListener('load', sfOnLoad); sf.style.opacity = '1'; };
+        sf.addEventListener('load', sfOnLoad);
+        sf.src = surl;
+      }
       // 场景属性（P0-2.3）：把主题 weUserProperties 写进 WebWallGL 渲染器。
       // 两种通道：同源直访 contentWindow.__weSeedProps（种子，首次即应用）；
       // 跨源 sandbox 场景退化为 postMessage({__we:1,op:'applyProps'})。
@@ -347,6 +387,14 @@ function wallpaperBackground(payload) {
     installVisibilityPause(
       function () { return document.getElementById(ID.video); },
       function () { return document.getElementById(ID.scene); }
+    );
+
+    // ⑥b 空闲降帧（P1）：前台但闲置 60s 时场景降 15fps，活动恢复原帧率
+    var baseFps = 30;
+    try { var m = /[?&]sceneFps=(\d+)/.exec(payload.sceneUrl || ''); if (m) baseFps = Number(m[1]); } catch (_) {}
+    installIdleThrottle(
+      function () { return document.getElementById(ID.scene); },
+      baseFps
     );
 
     // ⑦ 主色驱动 accent（P0-2.2）：图片壁纸采样主色写 --wdw-accent
