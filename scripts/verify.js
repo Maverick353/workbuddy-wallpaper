@@ -1153,6 +1153,10 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '自动轮播钉子：rotateOnce 从当前源随机切换、setRotate 调度定时器、暂停时跳过轮播');
     ok(/data-act="rotate"/.test(panelSrc5) && /scheduleRotate/.test(panelSrc5),
       '自动轮播钉子：库页要有间隔档位（关/5/15/30/60 分）且 scheduleRotate 落地');
+    ok(/function setVrate/.test(panelSrc5) && /function setVmuted/.test(panelSrc5) && /playbackRate/.test(panelSrc5),
+      '视频控制钉子：视频倍速 setVrate + 静音 setVmuted，直接操作 wdw-bg-video 的 playbackRate/muted');
+    ok(/function doUndo/.test(panelSrc5) && /st\.undo/.test(panelSrc5) && /p-toast-act/.test(panelSrc5),
+      '撤销钉子：应用前记 st.undo，成功 toast 带撤销按钮（p-toast-act），doUndo 回上一张');
   }
 
   // ── 暂停 / 退出分离（2026-10-28「关闭壁纸 ≈ 卸载」的回归钉）──────────────────

@@ -44,6 +44,9 @@ const LS_ACCENT = 'wdw.accent';
 const LS_RECENT = 'wdw.recent';
 // 自动轮播间隔（分钟；0=关闭，5/15/30/60 可选）
 const LS_ROTATE = 'wdw.rotate';
+// 视频倍速 + 静音（直接操作 wdw-bg-video 元素）
+const LS_VRATE = 'wdw.vrate';
+const LS_VMUTED = 'wdw.vmuted';
 // 外观预设：accent + 玻璃浓度 + 蒙版 整套快照（借鉴 dsh 的 glass-presets）
 const LOOK_PRESETS = [
   { id: 'follow', name: '跟随壁纸', accent: '', glass: 62, mask: 0 },
@@ -122,6 +125,10 @@ function wallpaperPanel(payload) {
     recent: null,                 // 最近使用列表（库页快捷段；null=未读取）
     rotate: 0,                    // 自动轮播间隔（分钟；0=关闭）
     rotateTimer: null,            // 轮播定时器句柄
+    vrate: 1,                     // 视频倍速（0.5~2）
+    vmuted: true,                 // 视频静音
+    toast: '', toastAct: '',      // 轻提示文案 + 可选操作（如撤销）
+    undo: null,                   // 撤销目标（上一张壁纸 {kind,id,title}）
     fx: null,                     // 当前主题动态效果能力 { daynight, parallax }（来自 /api/wallpapers）
     fxDaynight: null, fxParallax: null, fxBusy: false,  // 昼夜循环/视差开关（null=读取中）
     // 场景属性（P0-2.3）：当前场景 general.properties 的可调属性表 + 已落盘值 + 忙碌态。
@@ -319,6 +326,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + ' .p-range::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;margin-top:-5px;border-radius:50%;background:#fff;border:0;box-shadow:0 1px 4px rgba(0,0,0,.45)}',
       // 轻提示：底部浮一条，不占布局
       '#' + ID.root + ' .p-toast{position:absolute;left:12px;right:12px;bottom:44px;padding:8px 10px;border-radius:10px;background:rgba(20,22,28,.94);border:1px solid rgba(255,255,255,.16);color:var(--wdw-ink);font-size:11.5px;line-height:1.45;box-shadow:0 6px 22px rgba(0,0,0,.45);animation:wdw-tab-in .18s ease-out;z-index:2;word-break:break-all}',
+      '#' + ID.root + ' .p-toast-act{margin-left:8px;padding:1px 8px;border-radius:6px;border:1px solid color-mix(in srgb,var(--wdw-accent) 60%,transparent);background:color-mix(in srgb,var(--wdw-accent) 24%,transparent);color:var(--wdw-ink);cursor:pointer;font-size:11px;white-space:nowrap}',
       // ── 字体页：调色盘 + 可搜索字体列表 ──
       '#' + ID.root + ' .p-colorwrap{display:flex;align-items:center;gap:8px}',
       '#' + ID.root + ' input[type=color]{width:40px;height:24px;padding:0;border:1px solid var(--wdw-glass-line);border-radius:8px;background:transparent;cursor:pointer}',
@@ -727,6 +735,19 @@ function wallpaperPanel(payload) {
           }).join('')
           + '</div></div>';
       })()
+      // ④c 视频播放（#1）：倍速 + 静音，直接操作 wdw-bg-video 元素
+      + (function () {
+        var rates = [{ v: 0.5, t: '0.5x' }, { v: 0.75, t: '0.75x' }, { v: 1, t: '1x' }, { v: 1.25, t: '1.25x' }, { v: 1.5, t: '1.5x' }, { v: 2, t: '2x' }];
+        return '<div class="p-sec"><span class="p-sec-t">视频播放</span>'
+          + '<div class="p-row"><span class="p-row-l"><b>倍速</b><i>视频壁纸播放速度；图片/场景壁纸不受影响</i></span></div>'
+          + '<div class="p-seg">' + rates.map(function (o) {
+            var on = Math.abs(st.vrate - o.v) < 0.01;
+            return '<button type="button" data-act="vrate" data-v="' + o.v + '"' + (on ? ' class="wdw-on"' : '') + '>' + o.t + '</button>';
+          }).join('') + '</div>'
+          + '<div class="p-row"><span class="p-row-l"><b>静音</b><i>视频壁纸是否出声</i></span>'
+          + '<button type="button" class="p-sw' + (st.vmuted ? ' wdw-on' : '') + '" data-act="vmuted" role="switch" aria-checked="' + (st.vmuted ? 'true' : 'false') + '"></button></div>'
+          + '</div>';
+      })()
       + '</div>';
   }
 
@@ -933,7 +954,11 @@ function wallpaperPanel(payload) {
 
   function paneHtml() {
     // 轻提示（应用壁纸/上传完成）：挂在每个 pane 末尾，paint 重建 body 时自然跟着刷新
-    var tip = st.toast ? '<div class="p-toast">' + esc(st.toast) + '</div>' : '';
+    var tip = st.toast
+      ? '<div class="p-toast">' + esc(st.toast)
+        + (st.toastAct ? ' <button type="button" class="p-toast-act" data-act="' + esc(st.toastAct) + '">撤销</button>' : '')
+        + '</div>'
+      : '';
     var body;
     switch (st.tab) {
       case 'font': body = paneFont(); break;
@@ -947,11 +972,12 @@ function wallpaperPanel(payload) {
 
   /** 轻提示：默认 1.6s 自动消失；长消息给久一点 */
   var toastTimer = null;
-  function toast(msg, ms) {
+  function toast(msg, ms, act) {
     st.toast = msg || '';
+    st.toastAct = act || '';
     if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
     if (st.toast) {
-      toastTimer = setTimeout(function () { st.toast = ''; paint(); }, ms || 1600);
+      toastTimer = setTimeout(function () { st.toast = ''; st.toastAct = ''; paint(); }, ms || 1600);
       if (toastTimer.unref) toastTimer.unref();
     }
     paint();
@@ -1253,6 +1279,30 @@ function wallpaperPanel(payload) {
     if (pick.kind === 'we') applyWe(pick.id, pick.title);
     else apply(pick.id, pick.title);
   }
+  /** 视频倍速 + 静音（#1）：直接操作 wdw-bg-video 元素，写 localStorage 持久化。 */
+  function loadVideoCtrl() {
+    try { st.vrate = Math.min(2, Math.max(0.5, parseFloat(localStorage.getItem(LS_VRATE)) || 1)); } catch (_) { st.vrate = 1; }
+    try { st.vmuted = localStorage.getItem(LS_VMUTED) !== 'off'; } catch (_) { st.vmuted = true; }
+    applyVideoCtrl();
+  }
+  function applyVideoCtrl() {
+    var v = document.getElementById('wdw-bg-video');
+    if (!v) return;
+    try { v.playbackRate = st.vrate; } catch (_) {}
+    try { v.muted = !!st.vmuted; } catch (_) {}
+  }
+  function setVrate(r) {
+    st.vrate = Math.min(2, Math.max(0.5, Number(r) || 1));
+    try { localStorage.setItem(LS_VRATE, String(st.vrate)); } catch (_) {}
+    applyVideoCtrl();
+    paint();
+  }
+  function setVmuted(on) {
+    st.vmuted = !!on;
+    try { localStorage.setItem(LS_VMUTED, st.vmuted ? 'on' : 'off'); } catch (_) {}
+    applyVideoCtrl();
+    paint();
+  }
 
   function doReinject() {
     st.reinjectBusy = true; st.err = ''; paint();
@@ -1267,6 +1317,8 @@ function wallpaperPanel(payload) {
 
   function apply(name, title) {
     st.applying = name; st.err = '';
+    // 记录撤销目标（上一张）：当前是 WE 场景则回 WE，否则回文件壁纸
+    st.undo = st.curWe ? { kind: 'we', id: String(st.curWe), title: st.curTitle || '' } : (st.cur ? { kind: 'file', id: st.cur, title: st.curTitle || '' } : null);
     toast('正在应用' + (title ? '：' + title : '…'), 8000);
     return req('/api/theme-bg', { id: 'standalone', wallpaper: name }).then(function (d) {
       st.applying = '';
@@ -1275,7 +1327,7 @@ function wallpaperPanel(payload) {
       pushRecent({ kind: 'file', id: name, title: title || name, thumb: API + '/wallpapers/' + encodeURIComponent(name) });
       return loadWallpapers().then(function () {
         paint();
-        toast('已应用' + (title ? '：' + title : ''));
+        toast('已应用' + (title ? '：' + title : ''), 2600, 'undo');
       });
     }).catch(function () { st.applying = ''; st.err = '应用失败：请求异常'; paint(); });
   }
@@ -1319,6 +1371,8 @@ function wallpaperPanel(payload) {
   }
   function applyWe(id, title) {
     st.applying = String(id); st.err = '';
+    // 记录撤销目标（上一张）：当前是 WE 场景则回 WE，否则回文件壁纸
+    st.undo = st.curWe ? { kind: 'we', id: String(st.curWe), title: st.curTitle || '' } : (st.cur ? { kind: 'file', id: st.cur, title: st.curTitle || '' } : null);
     toast('正在应用' + (title ? '：' + title : '…'), 15000);
     return req('/api/we-apply', { id: 'standalone', weId: String(id), sceneFps: st.sceneFps, muted: true }).then(function (d) {
       st.applying = '';
@@ -1327,9 +1381,18 @@ function wallpaperPanel(payload) {
       pushRecent({ kind: 'we', id: String(id), title: d.title || title || id, thumb: API + '/wallpaper-engine/scene-files/' + encodeURIComponent(String(id)) + '/preview.jpg' });
       return loadWallpapers().then(function () {
         paint();
-        toast('已应用' + (d.title ? '：' + d.title : ''));
+        toast('已应用' + (d.title ? '：' + d.title : ''), 2600, 'undo');
       });
     }).catch(function () { st.applying = ''; st.err = '应用失败：请求异常'; paint(); });
+  }
+  /** 撤销（#2）：回到上一张壁纸。 */
+  function doUndo() {
+    var u = st.undo;
+    st.undo = null;
+    st.toast = ''; st.toastAct = '';
+    if (!u) { paint(); return; }
+    if (u.kind === 'we') applyWe(u.id, u.title);
+    else apply(u.id, u.title);
   }
 
   // ── 事件 ────────────────────────────────────────────────────────────────
@@ -1446,6 +1509,9 @@ function wallpaperPanel(payload) {
           else if (a === 'mask-preset') { setMask(Number(act.getAttribute('data-v')) || 0); }
           else if (a === 'look-preset') { applyLookPreset(act.getAttribute('data-v')); }
           else if (a === 'rotate') { setRotate(Number(act.getAttribute('data-v')) || 0); }
+          else if (a === 'vrate') { setVrate(Number(act.getAttribute('data-v')) || 1); }
+          else if (a === 'vmuted') { setVmuted(!st.vmuted); }
+          else if (a === 'undo') { doUndo(); }
           else if (a === 'scene-fps') { setSceneFps(Number(act.getAttribute('data-v')) || 30); }
           else if (a === 'upload') {
             var f = el.querySelector('#wdw-up-file');
@@ -1612,6 +1678,7 @@ function wallpaperPanel(payload) {
     loadAccent();  // 手动强调色，同步应用（覆盖壁纸主色采样）
     loadRecent();  // 最近使用列表（库页快捷段）
     loadRotate();  // 自动轮播（读间隔并调度定时器）
+    loadVideoCtrl();  // 视频倍速+静音（直接操作视频元素）
     // 服务不可达时 loadXxx 置 offline → paint 出错误态提示条（而非空白/无反应）
     Promise.all([loadWallpapers(), loadCustom(), loadHealth(), loadMask()]).then(function () { paint(); }).catch(function () {});
     // 更新状态：读缓存立刻渲染；缓存过期才后台补检查（不阻塞打开）
