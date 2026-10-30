@@ -36,6 +36,8 @@ const LS_REPO = 'wdw.repo';
 // 动态效果开关键（与 ui/background.js 的 LS_FX_DAYNIGHT / LS_FX_PARALLAX 保持一致）
 const LS_FX_DAYNIGHT = 'wdw.fx.daynight';
 const LS_FX_PARALLAX = 'wdw.fx.parallax';
+// 面板玻璃浓度（0~100，写 --wdw-glass-amount；与背景层无关，纯面板 UI 偏好）
+const LS_GLASS = 'wdw.glass';
 /** 仓库过滤 chips（id → 标签）。fav 与其余并存：fav 只看收藏，其余按类型筛。 */
 const REPO_FILTERS = [
   { id: 'all', label: '全部' },
@@ -101,6 +103,7 @@ function wallpaperPanel(payload) {
     // 注入状态（health.injection）+ 蒙版浓度 + 应用中的壁纸 key（「应用中…」反馈）
     inj: undefined, mask: null, maskBusy: false, reinjectBusy: false, applying: '', pauseBusy: false,
     render: null,                 // WebGL 后端探测结果（软件渲染会让场景壁纸发糊，见 renderInfo）
+    glass: null,                  // 面板玻璃浓度（0~100，写 --wdw-glass-amount；null=读取中）
     fx: null,                     // 当前主题动态效果能力 { daynight, parallax }（来自 /api/wallpapers）
     fxDaynight: null, fxParallax: null, fxBusy: false,  // 昼夜循环/视差开关（null=读取中）
     // 场景属性（P0-2.3）：当前场景 general.properties 的可调属性表 + 已落盘值 + 忙碌态。
@@ -165,8 +168,15 @@ function wallpaperPanel(payload) {
       '--wdw-ink:var(--wb-color-text-primary,#e8ecf4);--wdw-ink-2:var(--wb-color-text-secondary,rgba(232,236,244,.72));--wdw-ink-3:rgba(232,236,244,.5);',
       '--wdw-accent:var(--wdw-accent-bg,var(--wb-accent,#4f8cff));',
       '--wdw-glass-line:rgba(255,255,255,.12);--wdw-glass-fill:rgba(255,255,255,.07);--wdw-glass-fill-hi:rgba(255,255,255,.13);',
-      'background:color-mix(in srgb,var(--wb-bg-primary,#101418) 62%,transparent);',
-      'background-image:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.015));',
+      // 可读性下限（借鉴 dsh-wallpaper-engine 的 Readability Floor）：玻璃釉层之下垫一层
+      // 固定不透明度的主题底，玻璃浓度滑条只在「下限之上」叠加 —— 用户怎么调都不会把
+      // 文字调得看不清（浅色 floor=0.45 / 深色 floor=0.59，保证最坏对比度 ≥4.63:1）。
+      // 结构：background-color = floor 底（固定）→ background-image 第一层 = 玻璃釉
+      // （--wdw-glass-amount 可调，默认 62 对齐旧观感）→ 第二层 = 顶部光泽渐变。
+      // 有效覆盖 = floor + glass×(1-floor) ≥ floor，滑条 alive above the floor。
+      '--wdw-floor:0.59;--wdw-glass-amount:62%;',
+      'background-color:color-mix(in srgb,var(--wb-bg-primary,#101418) calc(var(--wdw-floor,0.59)*100%),transparent);',
+      'background-image:linear-gradient(180deg,color-mix(in srgb,var(--wb-bg-primary,#101418) var(--wdw-glass-amount,62%),transparent),color-mix(in srgb,var(--wb-bg-primary,#101418) var(--wdw-glass-amount,62%),transparent)),linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.015));',
       'backdrop-filter:blur(24px) saturate(1.35);-webkit-backdrop-filter:blur(24px) saturate(1.35);',
       'border:1px solid rgba(255,255,255,.16);border-radius:22px;',
       // ⚠️ overflow 必须 visible：实测 2026-10-13 窗口全屏(1920)时 overflow:hidden
@@ -551,6 +561,18 @@ function wallpaperPanel(payload) {
         return '<button type="button" data-act="mask-preset" data-v="' + (p[1] / 100) + '"' + (on ? ' class="wdw-on"' : '') + '>' + p[0] + '</button>';
       }).join('') + '</div>'
       + '</div>'
+      // ②a 玻璃浓度（可读性下限，借鉴 dsh-wallpaper-engine 的 Readability Floor）：
+      //     面板玻璃底之下垫一层固定不透明度的主题底（floor=0.59），玻璃浓度只在「下限之上」
+      //     叠加 —— 用户怎么调都不会把文字调得看不清。纯前端（localStorage + CSS 变量）。
+      + (function () {
+        var g = st.glass == null ? 62 : st.glass;
+        return '<div class="p-sec"><span class="p-sec-t">玻璃浓度</span>'
+          + '<div class="p-row"><span class="p-row-l"><b>面板玻璃</b>'
+          + '<i>调低更通透、调高更实；可读性下限已兜底，不会调到看不清字</i></span>'
+          + '<span class="p-hint p-tag" data-glass-pct>' + g + '%</span></div>'
+          + '<input class="p-range" id="wdw-glass" type="range" min="0" max="100" step="5" value="' + g + '">'
+          + '</div>';
+      })()
       // ②b 动态效果（P0-2.3）：昼夜循环 + 鼠标视差。开关写 localStorage，重注入即时生效。
       + (function () {
         var cap = st.fx || { daynight: false, parallax: false };
@@ -1080,6 +1102,27 @@ function wallpaperPanel(payload) {
       paint();
     }).catch(function () { st.maskBusy = false; st.err = '蒙版设置失败（服务未响应）'; paint(); });
   }
+  /** 面板玻璃浓度（0~100，纯前端 localStorage + CSS 变量，写 --wdw-glass-amount）。 */
+  function loadGlass() {
+    try {
+      var v = parseInt(localStorage.getItem(LS_GLASS), 10);
+      st.glass = Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 62;
+    } catch (_) { st.glass = 62; }
+    applyGlassVar(st.glass);
+  }
+  function applyGlassVar(n) {
+    var el = document.getElementById(ID.root);
+    if (el) el.style.setProperty('--wdw-glass-amount', n + '%');
+  }
+  function setGlass(v) {
+    var n = Math.min(100, Math.max(0, Math.round(Number(v))));
+    if (!Number.isFinite(n)) n = 62;
+    st.glass = n;
+    try { localStorage.setItem(LS_GLASS, String(n)); } catch (_) {}
+    applyGlassVar(n);
+    paint();
+  }
+
   function doReinject() {
     st.reinjectBusy = true; st.err = ''; paint();
     return req('/api/inject', {}).then(function (d) {
@@ -1299,6 +1342,13 @@ function wallpaperPanel(payload) {
       if (!t) return;
       if (t.id === 'wdw-repo-q') { st.rquery = t.value || ''; refreshRepoGrid(); }
       else if (t.id === 'wdw-fontsearch') { st.fontQuery = t.value || ''; refreshFontList(); }
+      else if (t.id === 'wdw-glass') {
+        // 玻璃浓度拖动中：即时应用 CSS 变量（不整页重绘，避免拖动卡顿）
+        var gv = Number(t.value);
+        if (Number.isFinite(gv)) { st.glass = Math.round(gv); applyGlassVar(st.glass); }
+        var tag = document.querySelector('#' + ID.root + ' [data-glass-pct]');
+        if (tag) tag.textContent = st.glass + '%';
+      }
       else if (t.id === 'wdw-fontcolor') {
         // 调色盘拖动中：即时预览（不整页重绘，避免打断取色器）
         setFont({ color: t.value });
@@ -1311,6 +1361,7 @@ function wallpaperPanel(payload) {
       var t = e.target;
       if (t.id === 'wdw-fontcolor') { setFont({ color: t.value }); paint(); return; }
       if (t.id === 'wdw-mask') { setMask(Number(t.value) / 100); return; }
+      if (t.id === 'wdw-glass') { setGlass(Number(t.value)); return; }
       // 场景属性：slider / color / combo（P0-2.3）—— change 时提交
       var sc = t && t.getAttribute && t.getAttribute('data-scprop') ? t : (t && t.closest ? t.closest('[data-scprop]') : null);
       if (sc && sc.getAttribute('data-type') !== 'bool') {
@@ -1411,6 +1462,7 @@ function wallpaperPanel(payload) {
     var el = build();
     st.open = true;
     el.classList.add('wdw-open');
+    loadGlass();   // 玻璃浓度是纯前端（localStorage + CSS 变量），同步应用
     // 服务不可达时 loadXxx 置 offline → paint 出错误态提示条（而非空白/无反应）
     Promise.all([loadWallpapers(), loadCustom(), loadHealth(), loadMask()]).then(function () { paint(); }).catch(function () {});
     // 更新状态：读缓存立刻渲染；缓存过期才后台补检查（不阻塞打开）

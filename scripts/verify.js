@@ -1111,6 +1111,21 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '智能降级钉子：软件渲染时场景帧率强制 15 fps（3.1 自动降级，省核）');
   }
 
+  // ── 可读性下限 + 玻璃浓度（借鉴 dsh-wallpaper-engine 的 Readability Floor）──
+  {
+    const panelSrc3 = readT('ui/dsh-ui/panel.js');
+    ok(/--wdw-floor:0\.59/.test(panelSrc3),
+      '可读性钉子：面板要有 --wdw-floor 下限（深色 0.59，玻璃透明层下垫固定主题底）');
+    ok(/--wdw-glass-amount:62%/.test(panelSrc3) && /--wdw-glass-amount/.test(panelSrc3),
+      '可读性钉子：玻璃浓度 --wdw-glass-amount 默认 62%（对齐旧观感），且滑条只调这一层');
+    ok(/calc\(var\(--wdw-floor,0\.59\)\*100%\)/.test(panelSrc3),
+      '可读性钉子：floor 底用 color-mix 固定不透明度，玻璃浓度滑条「alive above the floor」压不到它');
+    ok(/function setGlass/.test(panelSrc3) && /function loadGlass/.test(panelSrc3),
+      '可读性钉子：面板要有玻璃浓度 setGlass/loadGlass（localStorage + CSS 变量，纯前端）');
+    ok(/wdw-glass/.test(panelSrc3) && /data-glass-pct/.test(panelSrc3),
+      '可读性钉子：玻璃浓度滑条（wdw-glass + data-glass-pct 实时百分比）已接线');
+  }
+
   // ── 暂停 / 退出分离（2026-10-28「关闭壁纸 ≈ 卸载」的回归钉）──────────────────
   //  背景：旧版只有一个「关闭壁纸」= 写 .stopped + 服务退出 + companion 不再拉起，
   //  想「先关一会儿」的用户实际执行了「卸载」，且面板一起消失、无法自救。
