@@ -162,6 +162,71 @@ function wallpaperBackground(payload) {
     }
   }
 
+  // ── 遮挡暂停（P0-2.3，零外部依赖）────────────────────────────────────
+  // 窗口失焦 / 最小化 / document.hidden 时，暂停视频 + 暂停场景渲染，回来再恢复。
+  // 对标 dsh-wallpaper-engine 的「occlusion pause」：既省 GPU 又省电。
+  // 代价：只调 video.pause()/play() 与场景的 __weSetPaused，不销毁任何层（幂等、可逆）。
+  var visInstalled = false;
+  function installVisibilityPause(getVideo, getScene) {
+    if (visInstalled) return;
+    visInstalled = true;
+    function paused() {
+      try { return document.hidden || document.visibilityState === 'hidden'; } catch (_) { return false; }
+    }
+    function apply(hidden) {
+      var v = getVideo();
+      if (v) { try { if (hidden) v.pause(); else if (v.getAttribute('data-src-key')) { var p = v.play(); if (p && p.catch) p.catch(function () {}); } } catch (_) {} }
+      var sc = getScene();
+      if (sc) {
+        try { if (sc.contentWindow && sc.contentWindow.__weSetPaused) { sc.contentWindow.__weSetPaused(!!hidden); } } catch (_) {}
+        try { sc.contentWindow.postMessage({ __we: 1, op: 'setPaused', v: !!hidden }, '*'); } catch (_) {}
+      }
+    }
+    document.addEventListener('visibilitychange', function () { apply(paused()); });
+    window.addEventListener('blur', function () { apply(true); });
+    window.addEventListener('focus', function () { apply(paused()); });
+  }
+
+  // ── 主色驱动 accent（P0-2.2，零外部依赖）───────────────────────────────
+  // 图片壁纸：读 dataURL 像素算平均主色，写到 --wdw-accent（面板玻璃拟态随壁纸换肤）。
+  // 视频/场景取不到像素 → 跳过，保持宿主默认 accent（不破坏现有观感）。
+  // 只处理图片分支：dataURL 直读，无网络、无二次请求。
+  function applyAccentFromImage(css) {
+    try {
+      var m = /url\(data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/=]+)\)/.exec(css || '');
+      if (!m) return;
+      var bin = atob(m[1]);
+      var arr = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var cv = document.createElement('canvas');
+          var scale = Math.min(1, 32 / Math.max(1, img.width));
+          cv.width = Math.max(1, Math.round(img.width * scale));
+          cv.height = Math.max(1, Math.round(img.height * scale));
+          var g = cv.getContext('2d', { willReadFrequently: true });
+          g.drawImage(img, 0, 0, cv.width, cv.height);
+          var d = g.getImageData(0, 0, cv.width, cv.height).data;
+          var r = 0, gg = 0, b = 0, n = 0;
+          for (var j = 0; j < d.length; j += 4) { r += d[j]; gg += d[j + 1]; b += d[j + 2]; n++; }
+          if (!n) return;
+          r = Math.round(r / n); gg = Math.round(gg / n); b = Math.round(b / n);
+          // 太暗/太灰的主色不覆盖（避免黑壁纸把 accent 也拉黑）；饱和度不足时保持默认
+          var max = Math.max(r, gg, b), min = Math.min(r, gg, b);
+          if (max < 60) return;                       // 太暗 → 保持默认蓝
+          if (max - min < 30) return;                 // 接近灰 → 保持默认蓝
+          var hex = '#' + ('0' + r.toString(16)).slice(-2) + ('0' + gg.toString(16)).slice(-2) + ('0' + b.toString(16)).slice(-2);
+          var root = document.documentElement;
+          root.style.setProperty('--wdw-accent-bg', hex);
+          root.setAttribute('data-wdw-accent', hex);
+        } catch (_) {}
+      };
+      img.onerror = function () {};
+      img.src = 'data:image/png;base64,' + m[1];
+    } catch (_) {}
+  }
+
   /** 视频加载：直链流式优先，失败回退 blob；用加载令牌丢弃过期回调（防旧 error 误判）。 */
   function loadVideo(ov, url) {
     var mode = 'stream';
@@ -277,6 +342,15 @@ function wallpaperBackground(payload) {
     var fx = document.getElementById(ID.fx);
     if (fx && fx.parentNode) pxTargets.push(fx);
     installParallax(pxTargets);
+
+    // ⑥ 遮挡暂停（P0-2.3）：失焦/隐藏时暂停视频与场景，回来恢复
+    installVisibilityPause(
+      function () { return document.getElementById(ID.video); },
+      function () { return document.getElementById(ID.scene); }
+    );
+
+    // ⑦ 主色驱动 accent（P0-2.2）：图片壁纸采样主色写 --wdw-accent
+    if (payload.css) applyAccentFromImage(payload.css);
 
     return { ok: true, css: !!payload.css, video: !!payload.videoUrl, scene: !!payload.sceneUrl, daynight: !!(payload.frames && daynightCfg()), parallax: parallaxCfg().on };
   } catch (e) {

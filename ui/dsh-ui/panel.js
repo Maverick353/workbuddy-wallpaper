@@ -163,7 +163,7 @@ function wallpaperPanel(payload) {
       '#' + ID.root + '{position:fixed;top:34px;right:12px;height:calc(100vh - 46px);width:344px;z-index:1500;display:flex;flex-direction:column;box-sizing:border-box;',
       '--wdw-ui-h:30px;--wdw-ui-radius:10px;--wdw-ease:cubic-bezier(0.16,1,0.3,1);--wdw-dur-fast:120ms;',
       '--wdw-ink:var(--wb-color-text-primary,#e8ecf4);--wdw-ink-2:var(--wb-color-text-secondary,rgba(232,236,244,.72));--wdw-ink-3:rgba(232,236,244,.5);',
-      '--wdw-accent:var(--wb-accent,#4f8cff);',
+      '--wdw-accent:var(--wdw-accent-bg,var(--wb-accent,#4f8cff));',
       '--wdw-glass-line:rgba(255,255,255,.12);--wdw-glass-fill:rgba(255,255,255,.07);--wdw-glass-fill-hi:rgba(255,255,255,.13);',
       'background:color-mix(in srgb,var(--wb-bg-primary,#101418) 62%,transparent);',
       'background-image:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.015));',
@@ -627,6 +627,25 @@ function wallpaperPanel(payload) {
           + '<span class="p-hint p-tag">' + (r.ok ? (bad ? 'CPU' : 'GPU') : '—') + '</span></div>'
           + (r.name ? '<div class="p-hint p-url" title="' + esc(r.name) + '">' + esc(r.name) + '</div>' : '')
           + '</div>';
+      })()
+      // ④b 场景帧率档位（P0-2.3 + 3.1 合一）：给场景壁纸设帧率上限，软件渲染时自动压到最低档。
+      //     为什么放这里：帧率上限直接决定 GPU 占用；软件渲染（CPU）跑场景最吃核，默认就该最低。
+      + (function () {
+        var r = renderInfo();
+        var bad = r.software === true;
+        var opts = [{ v: 30, t: '30 fps' }, { v: 24, t: '24 fps' }, { v: 15, t: '15 fps' }];
+        var cur = bad ? 15 : st.sceneFps;   // 软件渲染强制最低档（3.1 智能降级）
+        var tip = bad
+          ? '检测到软件渲染，已自动降到 15 fps（省核）；换显卡后可手动调高'
+          : '场景壁纸帧率上限，越低越省 GPU；视频/图片壁纸不受影响';
+        return '<div class="p-sec"><span class="p-sec-t">场景帧率</span>'
+          + '<div class="p-hint">' + esc(tip) + '</div>'
+          + '<div class="p-seg">'
+          + opts.map(function (o) {
+            var on = o.v === cur;
+            return '<button type="button" data-act="scene-fps" data-v="' + o.v + '"' + (on ? ' class="wdw-on"' : '') + (bad ? ' disabled title="软件渲染下固定 15 fps"' : '') + '>' + o.t + '</button>';
+          }).join('')
+          + '</div></div>';
       })()
       + '</div>';
   }
@@ -1114,6 +1133,15 @@ function wallpaperPanel(payload) {
       return loadWallpapers().then(function () { paint(); });
     }).catch(function () { st.pauseBusy = false; toast('操作失败：请求异常', 4000); paint(); });
   }
+  /** 场景帧率档位（P0-2.3/3.1）：改 st.sceneFps；当前是场景壁纸时重应用以即时生效。 */
+  function setSceneFps(v) {
+    st.sceneFps = Math.max(1, Math.min(120, Math.round(v) || 30));
+    paint();
+    // 当前是 WE 场景（有 weId）才重应用；否则只记档位，下次应用场景时生效
+    if (st.curWe) {
+      applyWe(String(st.curWe), st.curTitle || '');
+    }
+  }
   function applyWe(id, title) {
     st.applying = String(id); st.err = '';
     toast('正在应用' + (title ? '：' + title : '…'), 15000);
@@ -1230,6 +1258,7 @@ function wallpaperPanel(payload) {
           } else if (a === 'close') { api_close(); }
           else if (a === 'reinject') { doReinject(); }
           else if (a === 'mask-preset') { setMask(Number(act.getAttribute('data-v')) || 0); }
+          else if (a === 'scene-fps') { setSceneFps(Number(act.getAttribute('data-v')) || 30); }
           else if (a === 'upload') {
             var f = el.querySelector('#wdw-up-file');
             if (f) f.click();

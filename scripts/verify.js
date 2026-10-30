@@ -1091,6 +1091,26 @@ const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
       '场景属性钉子：background.js 要把 sceneProps 经 __weSeedProps/applyProps 写进 WebWallGL 渲染器（含跨源 postMessage 兜底）');
   }
 
+  // ── 遮挡暂停 + 主色 accent + 智能降级（P0 功能升级：2.2 / 2.3 / 3.1）──
+  {
+    const bgSrc3 = readT('ui/background.js');
+    ok(/function installVisibilityPause/.test(bgSrc3) && /visibilitychange/.test(bgSrc3),
+      '遮挡暂停钉子：background.js 要监听 visibilitychange/blur，失焦暂停视频与场景');
+    ok(/__weSetPaused/.test(bgSrc3) && /op: 'setPaused'/.test(bgSrc3),
+      '遮挡暂停钉子：场景暂停要走 __weSetPaused + postMessage setPaused 双通道（同源/跨源都覆盖）');
+    ok(/function applyAccentFromImage/.test(bgSrc3) && /--wdw-accent-bg/.test(bgSrc3),
+      '主色 accent 钉子：图片壁纸采样主色写 --wdw-accent-bg（面板 --wdw-accent 读它，玻璃拟态随壁纸换肤）');
+    ok(/max < 60/.test(bgSrc3) && /max - min < 30/.test(bgSrc3),
+      '主色 accent 钉子：过暗/过灰的主色不覆盖（避免黑壁纸把 accent 也拉黑，保持默认蓝）');
+    const panelSrc2 = readT('ui/dsh-ui/panel.js');
+    ok(/--wdw-accent:var\(--wdw-accent-bg,var\(--wb-accent,#4f8cff\)\)/.test(panelSrc2),
+      '主色 accent 钉子：面板 --wdw-accent 必须读 --wdw-accent-bg 兜底（否则 background 注入的主色被子级变量遮蔽）');
+    ok(/data-act="scene-fps"/.test(panelSrc2) && /function setSceneFps/.test(panelSrc2),
+      '场景帧率钉子：面板要有场景帧率档位（30/24/15）且 setSceneFps 落地');
+    ok(/bad \? 15 : st\.sceneFps/.test(panelSrc2),
+      '智能降级钉子：软件渲染时场景帧率强制 15 fps（3.1 自动降级，省核）');
+  }
+
   // ── 暂停 / 退出分离（2026-10-28「关闭壁纸 ≈ 卸载」的回归钉）──────────────────
   //  背景：旧版只有一个「关闭壁纸」= 写 .stopped + 服务退出 + companion 不再拉起，
   //  想「先关一会儿」的用户实际执行了「卸载」，且面板一起消失、无法自救。
